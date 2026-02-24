@@ -1,0 +1,269 @@
+Simplegrid combinatorics
+
+4x4 grid
+
+16 cells
+
+2^16 = 65536 raw possibilities
+
+There is a terminal and starting state, these are considered passable (white cells).
+
+So an all black entirely gridworld is not possible. Neither is all black except for just one. At least two white cells must exist in the grid.
+
+
+65536-1-16 = 65519
+
+65519 possible cells
+
+Find number of possibilities with k white cells: 
+\frac{16!}{k!\left(16-k\right)!}
+
+k	raw possibilities	G/S adjustment
+0	1			0
+1	16			0
+2	120			120*(2(2-1))
+3	560			560*(3(3-1))
+4	1820			1820*(4(4-1))
+5	4368			4368*(5(5-1))
+6	8008			8008*(6(6-1))
+7	11440			11440*(7(7-1))
+8	12870			12870*(8(8-1))
+9	11440			11440*(9(9-1))
+10	8008			8008*(10(10-1))
+11	4368			4368*(11(11-1))
+12	1820			1820*(12(12-1))
+13	560			560*(13(13-1))
+14	120			120*(14(14-1))
+15	16			16*(15(15-1))
+16	1			1*(16(16-1))
+Total	65536		
+
+(1+16+120+560+1820+4368+8008+11440)*2+12870 = 65536
+
+
+k	raw possibilities	G/S adjustment
+0	1			0
+1	16			0
+2	120			120*2
+3	560			560*6
+4	1820			1820*12
+5	4368			4368*20
+6	8008			8008*30
+7	11440			11440*42
+8	12870			12870*56
+9	11440			11440*72
+10	8008			8008*90
+11	4368			4368*110
+12	1820			1820*132
+13	560			560*156
+14	120			120*182
+15	16			16*210
+16	1			1*240
+Total	65536			
+
+
+
+k	raw possibilities	G/S adjustment
+0	1			0
+1	16			0
+2	120			240
+3	560			3360
+4	1820			21840
+5	4368			87360
+6	8008			240240
+7	11440			480480
+8	12870			720720
+9	11440			823680
+10	8008			720720
+11	4368			480480
+12	1820			240240
+13	560			87360
+14	120			21840
+15	16			3360
+16	1			240
+Total	65536			3932160
+
+
+240+3360+21840+87360+240240+480480+720720+823680+720720+480480+240240+87360+21840+3360+240 = 3932160	
+
+
+Adding this X and Y cell indeed proved to greatly increase the amount of states. We started with 65536 total states. I then separated them based on count of white cells, using the binomial theorem. Fore each of these groups, I multiplied by n(n+1), where n is the white cell count of that group, to obtain the possibilities of X and Y within that configuration. Then I summed up all the result of the groups and got 3932160, which is 60 times greater in number than 65336. 
+
+However, now I believe there is something that will greatly reduce the number of possibilities vastly, but I am unsure how straightforward it is to compute. Basically, imagining again that these black cells are impassible wall cells, and that the white cells are the cells you can walk on, in my grid world, I need the X cell and Y cell to be connected by white cells in some way. In other words, there needs to be a path between X cell and Y cell always for all combinations. Currently, there would be countless combinations that include states that don't allow X or Y to be traverssible. How to shorten this combination list further to include this only?
+
+****, rethinking approach
+
+
+GRID:
+
+2 white cells. In earlier model, there would be 120 possible combinations.
+
+
+Given the first place is here
+0	1	1	1
+1	1	1	1
+1	1	1	1
+1	1	1	1
+
+The second place has to be in one of the two adjacent ones.
+
+
+
+16 first places * avg number of adjacent opportunities = possibilities of 2 white cells placement
+
+Adjacent opportunities grid
+2	3	3	2
+3	4	4	3
+3	4	4	3
+2	3	3	2
+
+
+Corner = 2
+Side = 3
+Middle = 4.
+
+Count the number of corners, sides, and middles, divide by 16 or n, and you got the avg number of adjacent opportunities.
+
+There will always be 4 corners. (except if its a 1 by 1 but nah this won't happen)
+Side = Perimter - corners
+Middle = Total - perimter
+
+The perimeter of grid W by L: 
+	2: 4
+	3: 2*4 = 8
+	4: (4-1)*4 = 12
+
+Perimeter = (n-1)*4
+	- n in this context means n*n grid, not actually n states. Myabe it is better to say sqrt(n) here instead of n
+
+Perimeter for 4by4 is 12
+
+# Corners: 	4
+# Sides:	12-4 = 8
+# Middles:	16-12 = 4
+
+(4*2 + 8*3 + 4*4)/16 = 3
+
+3 is avg number of adjacents for cell
+
+
+16 first places * 3 avg number of adjacents
+16*3 = 48
+VALIDATION: (4*2 + 8*3 + 4*4) = 48 = 16*3
+
+
+
+CONCERN: When choosing the first pick, this restricts the number of next picks to (16 minus 1) (duh). Would this, on average, change the avg "adjacent opportunities" distribution?
+	- I believe this is not a problem, at least not in 2 choices, as the choice of adjacent opportunities implicitly accounts for you being in a particular cell.
+		- Use the (4*2 + 8*3 + 4*4) formula to better understand this
+	- Now the question is, is this a problem for 3-adjacent choice scenarios?
+
+
+
+THE N-ADJACENT CHOICE PROBLEM:
+
+After we do the 2 adjacent choice, we make an additional choice at an adjacent location.
+I believe the sound approach would be to take into account the full structure of cells that is already selected, and choose an adjacent one from that.
+
+This complicates the problem. We now need the adjacent cells to two already selected cells.
+Fortunately, i guess there are some restrictions with this.
+	- The cells already placed have to be adjacent
+
+GRID:
+
+1	1	0	0
+0	0	0	0
+0	0	0	0
+0	0	0	0
+
+3 possible choices in this case
+
+0	1	0	0
+0	0	0	0
+0	0	0	0
+0	0	0	0
+
+3 possible choices in this case
+
+
+NEW POSSIBLE MODEL: We have all these first choices. For the second 'first choice', the second choice of this second choice cannot be the same as the first choice of the first choice
+
+
+I have a combinatroics/algorithms problem. Given a discrete grid of 4 by 4 (16 total) cells, with each cell being a 1 or a 0, I want to count the number of possible states of the grid. Obviously, this would look something like 2^16=65536. However, there is an important criteria that has to be met that would greatly reduce the number of possible states. The 1 in this grid represents a 'wall' or 'black cell', and the 0 represents a 'traversible' or 'white' cell. A hypothetical person in this grid would be able to move through adjacent traversable white (0) cells but not though black wall cells. Now, when regrading all the possible forms that this gridworld might take, there is an important criteria: All white cells have to be at least indirectly connected with each other. There should be no white 'area' that is not reachable if in some other white part. Think about it. If there was some pocket of white space in the corner of map but it was unreachable by the rest of the white area in the grid, it might as well not exist. In other words, to the person's point of view, there is conceptually no difference between there being an unreachable white area or a filled in black area because in any case it is unreachable. So, the question is, given a 4x4 grid of 1s and 0s, how to count the possibile number of grid states, with the criteria that all white spaces must be somehow indirectly connected by being adjacent to each other.
+
+
+Connectivity constraint: All white cells (0) must form a single connected region. This means that if you consider all the white cells as a set, there must be a path through adjacent white cells between any pair of white cells. The connectivity of the white cells must not form disjoint clusters.
+
+GPT's approach outline:
+
+We do this algorithmically :
+
+1. Generate all possible 2^16 configurations of the grid, where each cell is either 0 (white) or 1 (black).
+2. Enforce and countthe connectivity constraint: For each valid configuration, check whether the white cells form a single connected component. This can be done using depth-first search (DFS) or breadth-first search (BFS) to verify that all white cells are reachable from any starting white cell.
+
+If each config took 1 second, it would take 18.2044444 hours to complete
+
+However, for an 8x8 grid, the number of raw configs would be 2^(8x8) = 2^64 = 1.84467441e19.
+
+1.84467441e19 seconds = 1.84467441e19/60/60/24 days = 2.13503983e14 days = 5.84942419e11 years = 584942.419 MY = 584.942419 billion years.
+
+The algorithm very quickly becomes infeasible for larger grrids.
+
+
+This is a sound algorithm. However, when we scale the grid size, this quickly becomes infeasible. An 8x8 grid means 1.84467441e19 raw combinations
+If evaluating a single combination takes a tenth of a second, this would take approximately 59 billion years to complete. If each config evaluation was reduced to a hundredth of a second, and parallelized to a 100 machines, this would take 59 million years. At best, this computation would take an astronomically large amount of time.
+
+To solve this, I wish to find a way to model the situation using a potential formula or possible simplified algorithm that uses combinatorics to make the computation easier. First, restate the specifications of the initial problem, and then thoroughly discuss whether or not this problem can be feasibly modeled using some sort of complex combinatorics formula.
+
+
+----Can this be Modelled Using Combinatorics?----
+
+Key Questions:
+	- Can we count valid connected configurations without generating all of them?
+	- Is there a combinatorial structure that can help model the grid and reduce the complexity?
+
+
+Combinatorial Models and Graph Theory: The problem of counting connected configurations can be viewed as a graph problem, where each grid cell is a vertex and edges exist between adjacent cells. The challenge is to count the number of ways we can place white cells (0s) such that they form a single connected component.
+
+Lattice Paths & Percolation Theory: One approach is to model this using ideas from percolation theory or lattice paths. In percolation theory, there is a focus on counting configurations where a "cluster" (group of connected cells) forms, and there are well-studied results for counting connected components in random grids, though these formulas often work for infinite grids or specific boundary conditions.
+
+Graph Enumeration Techniques: There are combinatorial techniques for counting connected subgraphs in a grid (often related to spanning trees or connected subgraphs), but these can be complex and may not provide simple closed-form expressions for arbitrary grid sizes.
+
+Dynamic Programming / Inclusion-Exclusion: One potential way to simplify the computation is to use dynamic programming or inclusion-exclusion principles to count connected configurations more efficiently. These methods might help avoid the need to explicitly generate all configurations. For example:
+
+Dynamic Programming on Graphs: By recognizing the grid as a graph, one could try to break the problem into smaller subproblems by progressively adding rows or columns, ensuring that each new configuration maintains connectivity.
+Inclusion-Exclusion: The inclusion-exclusion principle could help exclude invalid configurations (those that have disconnected white regions) from the total count, though this would still require careful combinatorial analysis.
+Burnside’s Lemma (Group Theory Approach): Another advanced combinatorial method might involve using Burnside's Lemma from group theory to account for symmetries in the grid. This could help reduce the number of unique configurations by considering symmetries (e.g., rotations, reflections of the grid), but it does not directly address the connectivity constraint.
+
+Monte Carlo / Approximation Methods: For very large grids, where an exact enumeration of configurations is infeasible, Monte Carlo methods or Markov Chain Monte Carlo (MCMC) simulations could be used to approximate the number of connected configurations by randomly sampling valid grid configurations and estimating the proportion that are connected.
+
+Feasible Approaches:
+1. Counting Connected Graphs:
+If the problem is viewed as counting the number of connected subgraphs in a 2D grid, this is a well-studied problem in combinatorics. For smaller grids, you could rely on exact enumeration algorithms, but for larger grids, heuristic or approximate methods would be necessary.
+
+2. Percolation Model:
+A possible approach is to model the grid as a percolation problem where the cells are randomly chosen to be open (white) or closed (black), and the goal is to count configurations where the open cells form a single percolating cluster. The percolation threshold (when a system transitions from disconnected to connected) could give insights into the behavior of large grids.
+
+3. Generating Functions:
+Another potential method for combinatorial counting of connected regions is through generating functions. This approach is used in combinatorics to find closed-form solutions for counting problems. A generating function could, in theory, be constructed to account for the number of connected configurations in a grid, though it would likely be highly complex.
+
+Conclusion:
+For large grids (like 8x8 or larger), exact enumeration of valid configurations by generating all possibilities is computationally infeasible. While there are no simple closed-form formulas for counting connected grid configurations directly, graph-theoretic methods, percolation models, or approximation methods (e.g., Monte Carlo simulations) could potentially help reduce the complexity. These methods might allow you to estimate or compute the number of valid configurations for larger grids without explicitly checking all possibilities. However, each of these approaches comes with its own set of challenges and may require advanced mathematical tools or heuristics.
+
+
+
+
+I would need to read up thoroughly on these topics.
+
+
+The Monte Carlo approach seems promising: You find a number of random samples, say a million (which is a hell of a lot better than 2^64), find the general ratio of valid to total samples, and see how it converges, then multiply this ratio by the total number of raw possibilities to find the actual number.
+
+
+Number of pertubations required for 95% confidence level
+
+m >= (1.96^2 * p(1-p))/epsilon^2
+
+epsilon = 0.05
+p=0.5
+
+m >= 384.16

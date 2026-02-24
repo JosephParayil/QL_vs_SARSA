@@ -1,0 +1,2873 @@
+Project Log Summary (written by GPT)
+
+Early Stage — Getting QL and SARSA Working
+The author implements Q-Learning first, verifying it works with epsilon decay and in slippery environments. They then implement SARSA and notice it performs comparably at first. They build out an auto-logging system (JSON files, MP4 playbacks, folder structures) and a performance analysis machine to run many trials and graph results.
+
+Discovery — QL Consistently Beats SARSA
+After systematic testing across many hyperparameter configurations, the author finds QL almost always outperforms SARSA in the SimpleGrid environment. They find the exception: in cliff-walking environments (high punishment, terminal obstacles), SARSA wins — consistent with known RL theory. This raises the central research question: why does QL beat SARSA in low-punishment gridworlds?
+
+Hypothesis Formation
+The author develops a hypothesis that QL beats SARSA when rewards are sparse and the path to the goal is long, because QL's "careless" max operator lets it learn the optimal path faster without being penalized by epsilon exploration. SARSA's "cautious" on-policy updates hurt it when the environment doesn't punish exploration much.
+
+Experiment Design — The "Little Experiment"
+Two independent variables are identified to systematically test the hypothesis:
+- Length of the shortest path to the goal
+- Average wall adjacency of cells along that shortest path (a proxy for how risky/costly epsilon exploration is)
+
+Gridworld Generation
+The author builds a sophisticated gridworld generation system using random-cell, Perlin noise, and random-walker procedural methods to map out the 2D space of these two variables. A connectivity constraint (all white cells must be reachable) is enforced, and a Monte Carlo method estimates the astronomically large number of valid configurations. Compression/decompression utilities are built for storing gridworlds efficiently.
+
+Causal Analysis
+Toward the end, the author works through a detailed causal model explaining why SARSA underperforms: it fails to explore the goal area sufficiently, gets stuck in "timeout corners," and receives negative Q-value updates at bottleneck cells early on — discouraging it from ever attempting those paths again. QL avoids this because its update rule doesn't penalize future exploration.
+
+Science Fair Context
+Throughout, there are references to this being a high school science fair project, with mentions of advisors (Dr. Mondesire, Dr. Urbina), deadlines, form submissions, and even a section on how to build a good tri-fold display board.
+
+
+
+
+
+
+-----------------------------------------------------------------------
+
+https://www.researchgate.net/figure/The-Q-Learning-Algorithm-6_fig1_220776448
+
+action_mapping = {
+    'w': 0,  # Up
+    's': 1,  # Down
+    'a': 2,  # Left
+    'd': 3   # Right
+}
+
+
+-----------------------------------------------------------------------
+QL is successful. It works well, especially when using epsilon decay. It even seems to work with an artificially infused slippery environment. Even though the 4x4 simplegrid default world is eerily similar to the FrozenLake 4x4 one, it is different, as the lakes are just walls with some minor punishment, and the exterior borders are also considered walls with also some punishment. 
+
+However, I believe that, when making a comparison between QL and SARSA, it is better to use a constant epsilon approach.
+Reason 1: Mutual Information guy uses it and is where an interesting flip tradeoff is there
+Reason 2: The distinction between QL and SARSA is more one-sided in epsilon decay than in constant epsilon?
+Reason 3: Because of epsilon decay this might complicate data collection further down the road
+
+I forgot the exact reasoning behind #2. Further analysis will be required
+
+
+At least, when using constant epsilon, the np array has to be randomly initialized instead of with all zeroes.
+
+Actually, regardless of constant epsilon or decay epsilon, it is more advantageous for random initialization of the table than for all zeroes. It seems to make it faster
+	In epsilon decay, the effect is less pronounced but it does make it quite faster at least especially in the first episodes
+	In epsilon constant, the effect is much more pronounced. Not only is the episodes much shorter, but the actual end result is better.
+
+Note: alpha has been changed from 0.1 to 0.5 as per the TD video. Don't remember when exactly. I should make some sort of log for each test. Or I should incorporate automatically the information of each test into the file names for saves
+
+-----------------------------------------------------------------------
+I seem to be triumphant so far.
+
+My next steps are:
+1. Create auto file logging system
+	- Folder with code name such as : "QL-constant-random-a5-..." to indicate "Ql with constant epsilon and random initialization"
+	- Playback mp4 in this folder
+	- Txt/json with this data. Perhaps txt can contain the hyperparameter information, and Json can contain the q table
+	- All constants and hyperparameters and settings will be set clearly in the code. Then the file/folder structure will be automatically created
+
+2. Implement and verify  SARSA algorithm
+	- Change that single modification to the update rule
+	- Verify its functionality
+3. Develop performance analysis machine
+	- This includes automatically running many trials (based on video)
+	- And perhaps graphing the differences
+	- performance optimization to minimize time
+4. Start finding the tradeoff
+
+
+DE is coming up on me. I need to actually make emergency measures for this. This would include health optimization, frequent breaks, and less slither io.
+
+-----------------------------------------------------------------------
+
+hyperparameter_data = {
+    'algorithm': algorithm,
+    'epsilon_mode': epsilon_mode,
+    'table_init_mode': table_init_mode,
+    'use_slipperization': use_slipperization,
+    'episodes': episodes,
+    'max_steps': max_steps,
+    'alpha': alpha,
+    'gamma': gamma,
+    'epsilon': epsilon if epsilon_mode == "CONSTANT" else "N/A",
+    'start_loc': options['start_loc'],
+    'goal_loc': options['goal_loc'],
+    "elapsed training time": elapsed_training_time,
+    "q_table": q_table.tolist()
+}
+
+-----------------------------------------------------------------------
+11/30
+
+Step 1 is fully complete.
+Step 2, SARSA, must be implemented
+
+I will have two functions, train_QL() and train_SARSA(). I will implement the algorithm for SARSA.
+
+
+SARSA pseudocode: https://tcnguyen.github.io/reinforcement_learning/images/SARSA_algo.png
+
+
+-----------------------------------------------------------------------
+
+Step 2 has been implemented; the SARSA algorithm seems to work and seems to be on par with the QL one.
+
+It's time for step 3, making the performance analysis machine.
+
+How it will work:
+
+Essentially, right now, we have a bunch of folders representing individual training+test runs.
+	- ALL data from training is represented in the json file (currently)
+	- ALL data from the playback is in the mp4 file, not in the json file.
+However, eventually, we will want to include some data from the playback in the json file as well as more data in general.
+
+Data we want to add:
+	- Cumulative returns over time during training
+	- Return during playback trial (averaged)
+	- Timesteps taken during playback trial (averaged)
+
+Multiple trials of playback will not be done as the Q table will result in the same result every time. 
+	- EXCEPT EXCEPT EXCEPT: when slipperiness or stochasticity is enabled in the environment
+	- ultimately, for any given setup, a true test will need to be conducted to ensure all multiple trials of playback are the same
+	- We will code in for this multiple trial set up but only set the # of playback trials constant to 1.
+
+Let's say we want to put a bunch of these folder objects into a larger folder group. We can then run code to find the aggregate or average of all those runs. Preferably, all the hyperparameters of this extended group must be exactly the same for some average to be taken. Verification that all hyperparameters are the same will be done. An 'averaged' document will be displayed
+
+
+1. Add the new data
+	- Code for multiple playback trials (but the constant will be set for 1 for now)
+	- Record return and timesteps taken during playback trial (averaged)	
+	- Record returns over episode history (research required)
+	- Translate these returns into graph in the file saving process (research required)
+
+2. Run many of the same hyperparameter settings results and put in one big folder.
+	- Code to produce the 'averaged' json document
+	- Code to make the return graph from this average.
+
+3. Do same for the same hyperparameter settings for SARSA
+	- Code for a comparison machine that finds the similarities and differences in hyperparameters and compares the results. 
+	- Must organize the data to be split into two groups (At least in my head): hyperparameters, and results
+	
+
+-----------------------------------------------------------------------
+step 1 A is completed. I coded for multiple playback trials. There was difficulties in video saving but got that to work.
+I think it served to make the code a bit more organized regarding playback
+
+
+step 1 B is completed.
+
+Note: If the colab runtime is stopped, and the Training enabled is still false, the variables/constants wont be initialized and there will be error (as there should)
+
+Regarding recording the return, we have two options:
+1: record the raw cumulative reward
+2: record the GAMMA DISCOUNTED cumulative reward
+
+I'm not so sure which one I should do. I will ask Dr. Mondesire but, for now, I will go with gamma discounted.
+
+
+Step 1 C is done; working on Step 1 D and almost there just some debugging.
+
+
+-----------------------------------------------------------------------
+Boy its 1 AM.
+
+I just magically finished 1D. I searched it online and Bard AI told me to do plt.close('all') before saving. Potentially this gym thing is using matplotlib to display its google colab things, Idk. An interesting note is that last Friday at school, I was talking with others, but I must have subconsciously started up the program and it trained a QL agent successfuly. The PNG graph image was not blank that time however; it was a plot but with the distorted version and with Simplegrid in that small little corner.
+
+
+Regarding Step 2: 
+I'm not going to make a complicated multi-file aggregation thing. After all, when doing these kind of trials, playback is not needed in the first place. A whole JSON file for each and every thing is not needed.
+
+All I would have to do is make one json file with like singular hyperparameters and then the different thingies. I would SERIOUSLY have to reorganize everything because its getting messy.  Would also have to implement a system that can leave where it started in doing trials.
+
+
+-----------------------------------------------------------------------
+Bellman optimality is always within reach
+
+
+Let's make the training_test function!
+
+In the end, we want a json file with the hyperparameters, the history of all past tests (graph points and elapsed training time), then the average of that. And that should be it. Also the png of the average graph.
+
+The history of past tests can be added on to and whatnot.
+
+
+new Data.json contents:
+
+{
+	'hyperparameters': {
+			"algorithm": "QL",
+    			"epsilon_mode": "CONST",
+    			"table_init_mode": "RANDOM",
+    			"use_slipperization": false,
+			"episodes": 100,
+			"max_steps": 16,
+			"alpha": 0.5,
+			"gamma": 0.95,
+			"epsilon": 0.1,
+			"start_loc": 0,
+			"goal_loc": 15
+	},
+	'history': [
+		{
+			'episodic_returns': _
+			'elapsed_training_time': _
+	
+		},
+		...
+	]
+	'results': {
+		'avg_episodic_return': _
+		'avg_elapsed_training_time': _
+	}
+
+}
+
+
+
+Pseudocode:
+- Load/verify/create data.json
+- Repeat from i = continuation/0 to end:	
+	- Init Q table and epsilon to 0
+	- Train that ###
+	- Record the info
+	- If it's been 15 seconds since last save, save the current status of RAM to google drive.
+
+- Compute averages and save them.
+
+
+Loading process:
+
+- Set up your own data thingy
+
+- If a folder is there and data.json exists:
+	- Load
+	- Validate all hyperparameters to be same; raise error if not
+	- If all things are already complete, then also raise error/print
+- Else
+	- Make new one based on current data thingy
+
+
+
+
+-----------------------------------------------------------------------
+I belive I have finished Step 2: Make the performance analysis machine. 
+Ig the previous 3 step system is kind of obsolete now, but yeah.
+
+My next steps would be to validate for any possible errors in my in it.
+Then, it would be to somehow be able to compare different graphs.
+
+My plan for comparison would be to have a separate code segment get referred to the two json files, and then overlay the avg graphs on matplotlib, and export it.
+
+RN, it is seeming that SARSA might be doing worse than QL even with constant on. I will have to do the first two steps first though before I could verify this.
+
+By today midnight, my plan would be to finish these two steps above. Hopefully I can find instances of the QL vs SARSA tradeoff as well.
+
+For the Mondesire meeting, I will skip starting the official log and doing a thorough literature review.
+
+I will focus on QL vs SARSA tradeoff, RL project evaluation, project procedure, Mondesire policy
+
+So ~4 hours... I will put it higher at 6 hours of RL work time needed before the Mondesire purge...
+
+If the Mondesire purge is at 2 PM, then I would need to continuously work starting from 8 AM...
+
+
+Ok, let my work time start at 9 AM. I will get 4 hours this way, due to the reduction from lunch. 
+
+
+
+
+-----------------------------------------------------------------------
+Ig I am done with my performance machine. In the end I will need to make it object oriented, organizwd, and structured but it works for now.
+
+It seems that QL is beating SARSA...
+
+
+Img and desciprtion:
+
+2: Epsilon 0.3; QL victory
+3: epsilon 0.1
+4: epsilon 0.8
+5: epsilon 0.5
+6: epsilon 0.3 again
+7: epsilon 0.3 but with max_steps =64 instead of 16
+8: 8x8, epsilon 0.1, episodes 100, max steps = 64
+9: cliff walking env, max steps 64, epsilon, alpha, gamma, same as MI vid
+10: cliff walking but slippery is enabled!??!
+
+Damn, I guess QL is always beating SARSA here. But I guess changing a few hyperparameters was not the intention here. Ultimately, I wanted to change the environment configurations itself to find performance differences.
+
+There are two possibilities here
+1. This QL-SARSA difference is correct. I will find places where SARSA beats QL if I change the environment sufficiently
+2. There is some bug in my code that might alter the performance. If so, it could be something with the SARSA algorithm code, or with the training code or hyperparameter handling.
+
+For now, I'm going to assume that #1 is correct. If I really, really don't find places where SARSA beats QL, that might mean #2 is correct. Anyway, even if do get SARSA beating QL, there still might be some truth in #2. But anyways I will do that later after the Dr. Mondiesre meeting. 
+
+
+
+https://github.com/damat-le/gym-simplegrid/tree/main
+
+
+I can't seem to find a way to print the obstacle map that is preloaded as there is no documentation.
+
+Let me first replicate the walking cliffs environment. I would need to shape in that way but also somehow make the walls give -100 and terminate you
+
+
+Instead of replicating the walking cliffs environment, I straight up used it. In this case, SARSA indeed beat QL. And it did so in a comparable way to the results of Mutual Information. Althuogh his end result is a big marginarly higher...
+
+I guess a full algorithmic checking can come later. For now, it seems to work.
+
+An important note is that cliff walking seems to be taking longer to run... I wonder why. Perhaps replicating it exactly but in simplegrid might be faster? Idk
+
+
+-----------------------------------------------------------------------
+
+Ok I got playback working for QL and SG on the Cliff walking env. SARSA seems to be executing the same path as in MI. Same for QL.
+
+If I recall from the initial environment, we had a goal reward of 1 and a obstacle non-terminal reward of -1. The benefits of accounting for epsilon and the drawbacks of not accounting for epsilon are less. 
+	- Benefit for accounting epsilon is not that much because what else are ya gonna do? 
+	- Drawbacks of not accounting are less bc is not the end of the world (literally)
+
+So model can be drawn: SARSA beats QL when epsilon mistakes and accounting for this mistakes matter. 
+However, the question remains, why does QL ever beat SARSA at all? We are still using a constant epsilon approach. While the importance of epsilon might approach 0, this does not explain why QL would be better than SARSA rather than approach it from below.
+
+-----------------------------------------------------------------------
+
+Question: What are all the factors that can vary in an environment:
+	- Gridworld setup
+	- Epsilon
+	- Alpha
+	- Slipperiness
+	- Max steps	
+	- Gamma
+	- Reward at goal
+	- Punishment of existence
+	- Punishment of wall/hole 
+	- Wall or holes?
+
+
+REFINED:
+
+Variables
+	- Gridworld setup
+		- Length of shortest path to goal
+		- Ratio of white to black spaces
+		- Average neighboring black cells for given white cell
+	- Wall or holes? (terminal or not)
+
+Constants
+	- Epsilon value  (let's keep this at 0.1)
+	- Reward of goal	(let's make it 1 always)
+	- Punishment of existence (nah. let us have gamma of 0.95 tho)
+	- Slipperiness 	(off, as epsilon serves this purpose)
+	
+
+DEFAULT SIMPLEGRID BORDER SYSTEM: 
+	- Reward of goal: 1
+	- Border and obstacles are both the same wall object
+	- Walls are nonterminal and give -1 reward
+
+DEFAULT CW BORDER SYSTEM:
+	- Reward of Goal :0
+	- Border: non-terminal, no punishment
+	- Obstacles: terminal (hole), punishment -100
+
+
+
+Model: When there are a lot of obstacles that give punishment/terminality, there's not much you can do, and SARSA isn't favoured. When there is no-little obstacles that don't mean much, doing anything wouldn't matter, so SARSA isn't favoured. SARSA is favoured when there is a balance of obstacles, meaning there is consequences of epsilon, but there are things you can do about it.
+
+EC = epsilon consequence
+
+		You can do stuff about it	There's nothing we can do different
+High EC		SARSA better			QL
+Low EC		QL				QL
+
+
+
+The idea is to possibly shed light on why QL is better than SARSA by analyzing a large amount of instances where it does and doesn't.
+
+-----------------------------------------------------------------------
+I have one hour left before Mondesire meeting
+
+Here are the things I need to do:
+- Make a google slides presentation fast
+- 
+
+
+-----------------------------------------------------------------------
+
+
+
+
+x	x	x	x	x
+x	x	x	x	x
+x	x	x	x	x
+h	o	o	o	o
+o	o	o	o	o
+o	o	o	o	g
+
+
+15 Xs
+15 Os.
+(2+2+2+2 +1+1+1 +1+1+1 +1 +1 +0+0+0)/15
+
+
+O/X ratio = 		1
+avg adjacency = 	1.06666667 
+shortest path =		6
+
+
+-----------------------------------------------------------------------
+
+h	x	o	o	o
+o	x	o	x	o
+o	x	o	x	o
+o	x	o	x	o
+o	x	o	x	o
+o	o	o	x	g
+
+
+5+5	= 	10 x
+6+6+6+1+1 =	20 o
+
+3 + 3 + (2*18) = 42
+42/20 = 2.2
+
+
+O/X ratio = 		2 (more open spaces)
+avg adjacency = 	2.2 (but more closed in)
+shortest path	=	19 (long path)
+
+
+
+
+-----------------------------------------------------------------------
+F*** I gotta do this fast
+
+Objective I: Modularize and clean up the code
+
+I will use gpt to analyze the code and discuss how I can make it OOP to be better.
+
+Then I will code, and validate. 
+
+Objective complete. It took like 90+45 mins though which is too long.
+
+
+Objective II: Lit review
+
+Next I will quickly just do some automatic literature review, using the help of GPT.
+
+What does this paper say about QL vs SARSA? In this experiment, which beat the other? Does it give any insights into why or when one beats the other?
+
+
+
+-----------------------------------------------------------------------
+
+
+what is Q-Learning and SARSA
+
+
+Consider testing the performance of QL and SARSA in hundreds of different RL environments to see when one beats the other. When testing, we obtain the return over episodes graph with a constant epsilon. In some cases, SARSA beats QL and QL beats SARSA. When I say 'beat', I am not just referring to the rate of convergence. I specifically mean that, in the long run, the average converged value of the return over episodes graph might be higher for one than for another. Why might QL 'beat' SARSA, and vice versa? Be highly critical and analytical
+-----------------------------------------------------------------------
+
+
+
+I am analyzing two algorithms. Let's refer to them as Algorithm A and Algorithm B. Depending on the given problem set, one algorithm may outperform the other and vice versa. When Algorithm B beats Algorithm A, I already have a good understanding/explanation as to why. However, I have no idea why Algorithm A would beat Algorithm B in some cases. According to my current understanding/explanation, in such cases, Algorithm A's performance would only equal to/approach Algorithm B's. I have determined that there must exist some sort of 'hidden factor' outside of my current theory/understanding that affects the difference. I want to pursue a scientific experiment to explain why. However, I don't know enough to develop the experiment methodology, including the specific research question and hypothesis. I couldn't know exactly where to look or what to analyze to shed light on this 'hidden factor', as that is the nature of unknown things. I would have to kind of freely explore as I go. What to do? 
+
+
+
+"
+To systematically explore and potentially identify the "hidden factor" affecting performance, I suggest using a flexible, iterative approach within the framework of the scientific method.
+
+1. 
+Start by formulating a research question, but keep it broad and open-ended at first. Since you're looking for a hidden factor that might explain Algorithm A’s performance, your initial question could be something like:
+
+What factors influence the performance of QL relative to SARSA in cases where QL outperforms SARSA?
+
+Once you start gathering data, you can refine or narrow this question based on patterns that emerge.
+
+2. 
+While you don't have a clear idea of the hidden factor yet, you can still propose exploratory hypotheses. These hypotheses will be provisional and flexible as your understanding deepens. A starting hypothesis might be:
+
+There exists an external factor (e.g., data characteristics, algorithmic parameters, environmental conditions, or computational resources) that influences the performance gap between Algorithm A and Algorithm B.
+
+This hypothesis is quite broad and gives you the flexibility to explore many different possibilities. It also leaves room for revising your ideas as you collect data.
+
+3. Initial Exploration and Data Collection
+
+You can start by systematically varying different parameters that you think might influence performance
+
+Conduct experiments where you run both algorithms on the same problem set but manipulate one factor at a time (e.g., input size, complexity, or parameter settings).
+
+Record conditions where Algorithm A beats Algorithm B and try to identify any consistent differences in those conditions.
+
+4. Formulate Sub-Hypotheses and Test Them
+For example:
+If the input size is small, Algorithm A performs better due to its lower overhead, but as the input size grows, Algorithm B outperforms it because it scales better with larger inputs.
+The performance of Algorithm A may be more sensitive to the initial conditions of the problem set compared to Algorithm B.
+
+5. Data Analysis
+Conditions where Algorithm A is better: Is there something specific in these cases (e.g., problem set characteristics, execution conditions)?
+Consistency: Are there patterns that appear consistently across different runs and problem sets where Algorithm A outperforms Algorithm B?
+Variable correlations: Are there any external variables that seem to correlate with improved performance for Algorithm A?
+
+
+
+Possible methodologies:
+
+Exploratory Research (or Exploratory Data Analysis)
+	- Kind of in context of literature review/qualitative studies
+Hypothesis-Driven Iterative Testing
+	- Most used in Software engineering
+Adaptive Experimentation (or Adaptive Design)	< -	< -	< -	< -	< -
+	- Overall allows for flexibility in the experiment
+	- "machine learning" is one of the 'commonly used fields'
+
+----------------------------------------------------------------------------------------------
+Summary:
+
+Start with the question: "What are the factors that cause QL to beat SARSA"
+
+Hypothesis: Environments in which rewards are rare but significant (sparse) will prove to be the factor that causes QL to beat SARSA ... or something
+
+Procedure would be to explore performance by varying environment constraints in a controlled manner
+
+Then do a question-hypothesis to test something specific to the factor. Like this will correlate with this positively, indicating this as a factor. 
+
+
+Example Experiment Design
+Research Question: Why does Algorithm A sometimes outperform Algorithm B?
+Hypothesis: A hidden factor related to problem set characteristics (e.g., sparsity, randomness) or algorithmic configurations (e.g., initialization, execution environment) explains the difference.
+Methodology: Run both algorithms across a range of problem sets (varying size, sparsity, complexity) while controlling environmental factors. Track performance metrics such as execution time, accuracy, and memory usage.
+Analysis: Use statistical tools (e.g., regression analysis, correlation analysis) to identify which factors correlate with the times when Algorithm A outperforms Algorithm B.
+
+
+----------------------------------------------------------------------------------------------
+Title ideas:
+
+
+When negligence beats caution
+
+
+Carelessness over Caution: Why an Off-Policy Reinforcement Learning Algorithm Can Perform Better
+
+
+negligence, ignorance, carelessness
+
+caution, awareness, wariness
+
+Final Title: Carelessness Over Caution: Understanding the Hidden Power Behind Off-Policy Reinforcement Learning Algorithms
+
+
+'
+
+----------------------------------------------------------------------------------------------
+
+x	Reading through research forms 
+
+x		Starting a log
+
+Developing the little plan
+
+Literature research
+
+Dr. Mondesire email
+	- About QL vs SARSA literature
+	- Project title
+	- Project adaptive experimentation plan
+	- Timeline of my project
+
+
+
+----------------------------------------------------------------------------------------------
+
+The official research log will source information from the following documents
+	- simplegrid tabular rl project log.txt
+	- Research Policy document
+	- simplegrid combinatorics
+	- Simplegrid Project Plan google slides
+	- Mondesire emails
+	- Sample graph images
+
+
+
+----------------------------------------------------------------------------------------------
+
+Timeline for research log:
+
+- Dr Mondesire recommends simplegrid
+- Learned about the foundational TD algorithms such as QL and SARSA. Decided to do it on Simplegrid, recognizing it as the perfect arena for performance analysis (Nov 17th)
+- Simplegrid combinatorics late night Wednesday (technicaly Thursday at 11/21)
+- Dec 1st: got QL and SARSA to work
+- Dec 10-11: Mondesire and Urbina meeting
+ 
+
+----------------------------------------------------------------------------------------------
+
+There shall be Three Phases of my project:
+
+The Little Experiment (that initial multi-independent variable scan experiment)
+
+The Secret Experiment (must be determined after Little Experiment)
+
+The Mathematical Experiment (taking the algorithms apart by their equations and taking it up to the chalkboard)
+
+
+= = = = The Little Experimenet: = = = =
+
+Vary the 2-3 environment config variables systematically to map out QL and SARSA performance.
+
+1. Conduct a thorough simplegrid analysis
+	- Monte carlo estimation of gridworld connectivity constrained configurations
+		: yeah and its still astronomical u jit
+	- How to systematically generate the environment configurations
+		: generate random configs, filter the connectivity ones, and select a certain number from each demographic.
+	- What should my independent variables be?
+		: the 2 things which we can obtain and YE
+2. Procedure making
+	- How should I display and graph the thing? How should I statistically test it and interpret it
+3. Running the experiment
+	- What are the computational concerns?
+	- Reduce sources of unwanted error
+4. Data interpretation
+	- Statistic tests and graphing
+	- Interpretation
+	- What are my next steps
+
+
+
+= = = = The Secret Experiment: = = = =
+- something that will better explain the hidden power beind QL
+
+= = = = The Mathematical Experiment: = = = =
+- lots of guidance needed
+- take apart the questions and prove shi
+
+
+
+----------------------------------------------------------------------------------------------
+12/22 plan:
+
+9 days until the 31st. So I will have to allocate 3 days per experiment phase.
+
+After that, I have until 8th to do the forms. THis will most notably include the abstract and research plan.
+
+After that will be presentation making both physically and verbally.
+
+
+----------------------------------------------------------------------------------------------
+MOnte carlo step finished
+
+8x8 results:
+
+Probability of connectivity: 0.002762 = 0.3%
+Estimation of total connectivity constrained gridworlds: 5.0949907131585784e+16
+
+Years to compute: 1614505131.3023102 years
+
+1,614,505,131
+
+1.6 billion years needed
+
+
+
+----------------------------------------------------------------------------------------------
+
+Now, a further constraint may be applied: truncation of the environment. I don't think this will be of much reduction.
+
+But I have an idea of how it might be implemented.
+
+First, make a function that automatically determines how much width and height can be truncated. Then, when we increment the number of encountered viable solutions, divide it by ((truncatable_width+1)*(truncatable_height+1))
+
+Lets say we are able to truncate it by width once: ((1+1)*(0+1)) = 2. We discount the count of this environment by half. 
+
+Reasoning for this logic:
+If we were to have a sample size that includes all possible configurations, we would encounter the exact same version of something ((truncatable_width+1)*(truncatable_height+1)) times. So naturally, discounting each encountering of that by this value would give us the estimation that there is only one environment.
+
+
+
+Now, technically, another constraint could be applied: accounting for the fact that the even a non-truncatable valid gridworld could have 3 other exact look-a-likes, just rotated a certain way. Perhaps even flipped (not sure). But I guess if I were to do this, I would also have to account for the position of the goal and end state. For convenience, I guess i'm going to keep the goal state in the top left most cell and the end state in the bottom right most. So rotations would make a difference technically. THus its' not worth my time to calculate this.
+
+
+
+THese are good ideas but I will have to move on. I don't think it will make a difference to the absurd amount of compute time needed.
+
+----------------------------------------------------------------------------------------------
+
+When thinking of the experiment, we make our experiment specifically to test my hypothesis. My hypothesis is that the factor that causes QL to beat SARSA is its max operator allowing it to learn the optimal path faster than SARSA, which makes a difference in environments where the reward is sparse.
+
+These 2 independent variables I have, namely:
+	- Length of shortest path to goal
+	- Ratio of open to wall cells.
+
+, kind of really exemplify the QL vs SARSA tradeoff, at least according to my hypothesis.
+
+When the ratio is higher, SARSA's 2 conditions are more likely to be met and therefore it will succeed
+
+When the ratio is lower, and the length is higher, the reward will be more sparse, and, according to my hypothesis, would make for QL beating SARSA.
+
+The lower convergence of SARSA than QL in some cases could be due to some instances of SARSA learning slower causing the resulting average convergence rate to be lower.
+
+QL's algorithm int he context of a deterministic grid world environment could be said to always find the shortest path.
+
+The cost of epsilon can be expressed as 'the cost of epsilon when following the shortest path'. This could be directly expressed as the average adjacency of the cells in the shortest path. If you wanted, you could even factor in the specific epsilon and punishment of wall costs.
+
+I think the walls can be made non-terminal, but their cost oshuld be ooked into. I also think the border and walls distinction should be rethought.
+
+I think gamma should be 0.99 instead of 0.95. We want SARSA to be encouraged to take the safer/patient path. 
+
+
+My 2 new independent variables would be:
+	- Length of shortest path to goal
+	- Average adjacency of cells in the shortest path.
+
+Gamma: 0.99
+Walls: -1
+Borders: 0
+
+Verify that these parameters work while doing experiment.
+
+If QL's performance correlates with length of shortest path to goal, we hit bingo (our hypothesis is valid).
+
+
+----------------------------------------------------------------------------------------------
+
+Now, our task would be to generate gridworlds that vary in a controlled fashion with respect to my 2 independent variables.
+
+Right now, what I could do is add on to my monte carlo simulation for estimating the number of connectivity-constrained gridwords. For each viable gridworld encountered, I would see what are the 2 'independent variables'. Oddly enough, in this kind of mini-experiment data collection, my independent variables would then become dependent variables. 
+
+
+Given a viable gridworld:
+
+1. Generate the start and goal state
+	- The start would be the white cell closest to the top left corner. The goal would be the same but for the bottom right.
+2. Find shortest path. Get both length and list of cell cords
+3. For each cell coord, tally the number of adjacent wall cells. Then calculate the average per cell.
+
+
+I could perhaps plot this in a scatterplot: 'a graph that uses dots to represent values for two different numeric variables'
+
+
+
+
+----------------------------------------------------------------------------------------------
+given a gridworld, write a function that finds the closest white cell to the top left corner. You should return the tuple of the coordinates of this cell. THe function will be called 'find_goal_state'. First, analyze what a white cell closest to the top-left corner would mean and what would be the most efficient way to find it. THen actually code this function. Hint: your solution should not scan row by row, because that might yield a white cell to the far right when there could have been a white cell just one unit below.
+^
+|
+good prompt... actually maybe not
+
+
+GRIDWORLD DESCRIPTION:
+
+A gridworld is a 2D array where each cell has a specific value.
+White cells (0) represent navigable spaces, while black cells (1) represent walls.
+
+----------------------------------------------------------------------------------------------
+
+A gridworld is a 2D array where each cell has a specific value.
+White cells (0) represent navigable spaces, while black cells (1) represent walls.
+
+
+
+In python given a gridworld, write a function that finds the closest white cell to the top left corner. You should return the tuple of the coordinates of this cell. THe function will be called 'find_goal_state'. First, analyze what a white cell closest to the top-left corner would mean and what would be the most efficient way to find it. THen actually code this function. Hint: your solution should not scan row by row, because that might yield a white cell to the far right when there could have been a white cell just one unit below.
+
+
+^
+|
+NOW this is good!
+
+
+----------------------------------------------------------------------------------------------
+
+Note: Coords for our gridworld is like (rows,cols), or in other words, (y,x)
+
+----------------------------------------------------------------------------------------------
+
+Now, I want you to write a new function. Given a gridworld and a start coordinate and end coordinate, find the shortest path between them. You should both return the length of this shortest path, as well as a list of all the cells that compose this shortest path. The start and goal states would be part of this list of cells. First, conduct a critical analysis as to how you would go about finding the shortest path given two coordinates in a gridworld, specifically to find the numerical length as well as the list of coordinates of the cells that you visit.
+
+----------------------------------------------------------------------------------------------
+
+Write a function that takes in a gridworld and a coordinate within the gridworld (assuming this coordinate refers to a white cell), and then tally up the adjacent black cells (1s) to this coordinate. The top, bottom, left, and right cells should be checked. An out of bounds does not count as a wall cell.
+
+
+----------------------------------------------------------------------------------------------
+
+Now I would have to make a scatterplot of this data.
+
+Consider a google colab python environment.
+
+I want to create and display a scatterplot of various points.
+
+The points are contained in array called points. Each element of this array is an x-y tuple.
+
+The x-axis will be called 'Path length'. The y-axis will be called 'Avg Path Adjacency'
+
+Write the code to do this. Assume the points array is already defined.
+
+-----------------------------------------------------------------------
+
+It seems that there are limitations to my random-filter method for generating gridworlds.
+
+Length seems to be in a range from 8 - 25
+Adjacency seems to be from 0.25-1.7
+
+However, I would suppose that the actual limits would be more something like:
+Length: 1-33
+Adjacency: 0- 2.3
+
+The fact is that my method of random generation is inherently biased in a way. It is biased to making environments that are more chaotic rather than ordered.
+
+There might be better results with more complicated, involved, procedural generation methods, but this might also be biased in some way.
+
+So I believe my only option would be to make these environments by hand. I would have to be careful and make a set of principles as to minimize human bias when creating these gridworlds. But my reasoning for this is that human bias may actually not be that much compared to procedural or random bias.
+
+-----------------------------------------------------------------------
+
+Length:
+	Range: 1-48
+	Intervals: 1
+Adjacency:
+	Range: 0- 2
+	Intervals: 1/(path_length+1)
+
+Yo, I just realized why the adjacency (y) varies in a seemingly consistent fashion for the scatterplot dots. It's because there is a finite number of possible adjacency values given a pathlength.
+
+Remember that it is average path adjacency. It is the total number of neighboring walls for all path cells divided by the total number of path cells
+
+Let's say that the path length is 12. The number of total 'path cells' is 13 (including the start state). The adjacency value is then a fraction of 13.
+
+
+
+
+Maximum possible adjacency value:
+
+5x5 map:
+
+s	1	0	0	0
+0	1	0	1	0
+0	1	0	1	0
+0	1	0	1	0
+0	0	0	1	g
+
+
+
+1+1+1+1+0+1+1+2+2+2+2+1+0+1+1+1+1=19
+
+19/17 = 1.11764706 adjacency... that aint even much.
+
+I would put the maximum adjacency at 2. It would be higher with a different setup.
+
+
+9x9 map:
+
+0	1	0	0	0	1	0	0	0
+0	1	0	1	0	1	0	1	0
+0	1	0	1	0	1	0	1	0
+0	1	0	1	0	1	0	1	0
+0	1	0	1	0	1	0	1	0
+0	1	0	1	0	1	0	1	0
+0	1	0	1	0	1	0	1	0
+0	1	0	1	0	1	0	1	0
+0	0	0	1	0	0	0	1	0
+
+path length = 5*8 + 4*2 = 48 
+
+28
+
+2(13)+2
+Consider this function: possible adjacency points per given path length 
+
+l is path_length
+
+pointsPerLen(l) = 2(l+1)
+
+pointsPerLen(l) = 2l+2
+
+To find the possible number of points total from the range 1-48, all we have to do is take the sum,
+
+
+sum l=1 to 48: 2l+2
+
+= 2[[sum l=1 to 48: l] + [sum l=1 to 48: 1]]
+
+
+= 2[[sum l=1 to 48: l] + [sum l=1 to 48: 1]]
+
+=2[(48(48+1)/2) + 48(1)]
+
+=2[(1176) + 48(1)]
+
+= 2[1224]
+
+= 2448
+
+
+There would be 2448 total needed gridworld points.
+
+This is not factoring in repeats which could multiply that number further.
+
+2448 total gridworld points. If it takes 5 minutes of runtime to evaluate one gridworld config for both ql and sarsa, we would be looking at 2448 *5 = 12240 minutes of total runtime or 8.5 continuous days.
+
+2 mins per one gridword would be 2448*2 = 4896 mins = 3.4 days. Of course this is continuous. On an actual day-to-day basis, maybe only 12 full hours of runtime might be extracted. So the runtime might just take too long...
+
+In that case we would have to reduce the number of total points. To reduce the number of total points, we can either reduce the range or reduce the interval size, on x or y.
+
+I can only reduce path-size max-range or adjacency interval size.
+I think max-range is good as it is needed for comparison.
+
+Adjacency interval size might warrant some pruning. As we go further in path size, the interval becomes smaller. I feel that, after a certain point, we will not need that much 'accuracy'. But we will see.
+
+So
+
+
+
+
+-----------------------------------------------------------------------
+
+I cannot hand-make 2448 individual gridworlds.
+
+I will need some procedural methods.
+
+Randomness will still be key, but I believe I can change the configurations of the random generator to kind of shift the range of the resulting dots.
+
+Specifically, I believe I can shift the grid size,
+as well as changing the random choice function to favor more whites or more 1s.
+CHAT might be method might be method!!! METTTHOOOD!!!!
+
+
+I have varied the grid size and the distrubition varies as well, both in its position, range, as well as total number of points.
+
+Eventually, the larger the gridworld, the less total points there are because it becomes exponentially rarer for viable gridworlds to form.
+
+But I have not played around with the random choice weighting.
+
+Currently, the untouched areas are: 
+	- below (gridworlds with 0-very low adjacency values) 
+	- up (gridworlds with 2-to very high adjacency values)
+	- right (gridworlds with high path lengths)
+
+
+I believe that below and right-below can be solved by increasing the proportion of white to black cells. For example, if there are 90% white cells over black cells, there is going to be less adjacency values overall.
+
+This would also increase the total number of viable gridworlds. This would allow more points even with very large gridworlds. And this would naturally allow longer paths, as long as we increase the size to something like 25x25, or 40 x 3. But only those with low adjacency values. 
+So then after that our only problem becomes up. Gridworlds with high adjacency values. If we were to increase the proportion of black to white cells, viable gridworlds overall would become exceedingly rare. We would need a more procedural set up for this...
+
+Note: as we increase the proportion of white cells, the total number of dots SKYROCKET. I had to put a print limit when sorting it because SHEESH>
+
+-----------------------------------------------------------------------
+My next steps: 
+1. adjust these two distribution controllers to map out the below and right-below.
+2. Then find the more procedural method that will allow me to conquer the UP
+3. Restrict, filter, and obtain my set of gridworlds based on these 2 independent variables
+4. Conduct the training?
+5. Email dr. Mondesire
+6. make more plan
+
+
+-----------------------------------------------------------------------
+12/25
+Merry Christmas
+
+Step 1 above has been completed
+
+It creates a cool 'complete the map' set up. The bottom part universially as been conquered. Now it's just the up that needs to be conquered.
+
+Update: the sum l=1 to 48: 2l+2 is slightly incomplete
+
+sum l=1 to 48: 2l+3 is more accurate.
+
+
+So there would be 2496 total gridworld tests needed (but we are planning to reduce this number DW.
+
+
+Now for the procedural method making. This might be arguably the most tricky step...
+
+Chatgpt has given me a set of procedural map generation methods, often used in video-game design, that might be helpful:
+
+- Cellular Automata
+	- Seems promising also
+	- Would have to use secondarya filtering methods or something as well
+- Perlin Noise
+	- Not sure;
+	- Would have to use secondary filtering methods
+- Random Walker
+	- Promising
+- Dungeon/room-based generation
+	- Promising
+- Maze generation
+	- But probably Nah
+	- Prim's
+	- or Recursive Backtracking
+
+
+
+
+Remember the point of our two independent variables, length of the shortest path (X) and average wall adjacency of shortest path (Y).
+
+The higher the X, according to my hypothesis, the more QL is favored over SARSA.
+
+The higher the Y, the more cost there is of taking the shortest path, and therefore SARSA should be more favoured.
+
+I think for low Y and varying X, things get simple. SO whether I make a 23x23 grid or a 5x48 grid, I don't think it should matter. 
+
+However, I must think closely about my goals regarding the Y variable when making my procedural methods to map out the UP.
+
+
+Ideally, this is what I want:
+
+The higher the y, the more my 2 principles should be met
+
+Recall the 2 principles:
+	1. There is a significant cost along the shortest path due to epsilon
+	2. There is something you can do about it (there's another path that's not as risky)
+
+The Y metric by itself can be said to be a direct representation of the 1st principle. The higher the amount of walls are next to the shortest path, the higher the cost is due to epsilon when taking the shortest path.
+ 
+Now the question is what should I do with #2 with regards to the Y variable. Here are some possibilities:
+
+Possibility A: #2, the likelihood of there being another path, is 'constant' or 'random' regardless of the Y?
+	- What this would mean: there is usually another path regardless of how costly the shortest path is
+
+Possibility B: #2 scales directly with increasing Y?
+	- What this would mean: the higher the adjacency, there would also be more chance/feasibility of another path.
+	- This would kind of doubly increase SARSA's performance. I don't think this is necessary but it is not harmful to the experiment design
+
+Possibility C: #2 scales indirectly with Y
+	- What this would mean: when there is less punishment, there are alternatives, but when it happens that there is high punishment, there is no alternative
+	- This would be harmful to the experiment. When #1 is increasing but #2 is decreasing, they could be said to be canceling each other out. SARSA would not be advantaged well with higher Y..
+
+
+Possibilities A and B would be preferable for the experiment design, as Y then becomes an accurate metric for 2-principle-ism of the environment. B's case would be a bit weird and might result in a case where an increase in Y results in a squared increase for the 2-principle-ism. A's case, where the prevalence of there being another path is constant with respect to increasing Y, should be preferred.
+
+
+
+Principles for procedural algorithm selection:
+	- Should satisfy Case A
+	- Helps to map out that unexplored UP area.
+	- Should not be time costly to implement
+
+According to my imagination, Dungeon gridworlds would be able to have high adjacency values. You could control the sizes of rooms to be smaller to ultimately have very high adjacency values. Perlin noise would have lower adjacency values but maybe middle-adjacency values. Taking the shortest path might have you go and circumnavigate/hug big walls that can result in high but not too high Ys. 
+I should beware since dungeons, while having many different paths, often may not satisfy requirement #2 very much if at all. This is because corridors would all be narrow and risky. In this case, Case C would happen, as technically, with higher Y (entering dungeon territory), there would be lower #2 principle-ism. This could be potentially alleviated if there was a probability for there to be extra thick corridors, such as 3-blocks thick. Maybe dungeon dengeration should not be used. Walker also seems favorable.
+
+For any given generation method, you can scale horizonally by changing the gridworld size. So I think, if I have a certain method, I will be able to essentially fill all dots horizontal of that.
+
+At the end, proof of the soundness of the experiment would be observing that the differneces in QL and SARSA don't seem to have much difference when switching from different generation methods, as long as the two variables are the same. This means that my 2 variables would be a highly accurate measure of their comparative performance, rather than other factors. But this might not be probable.
+
+I will want to essentially have a way for classifying gridworlds not just by their points, but also by their generation method.
+It would be the generation method (rand, dungeoun, perlin, walker, etc), and then maybe the weighting ([0.5,0.5], [0.9,0.1]). Just for understanding the results. Color coding might be good.
+
+-----------------------------------------------------------------------
+
+So right now I am just going to implement perlin noise generation and observe what happens.
+
+## PARAMETERS FOR PERLIN NOISE:
+- Octaves, persistence, lacunarity
+- Rows/cols
+- Scale
+- Threshold
+
+
+
+Perlin noise.... I can't really manage to get adjacency much higher.
+
+What it does is it allows gridworlds to be bigger but still generate feesible maps. 
+
+I must admit the maps are more interesting this way.
+
+It is able to cover the old territory but without unnaturally lengthening the gridworld.
+
+Perlin noise will replace the existing stuff ig...
+
+
+
+I am implementing random walker. This seems to generate good maps. I can modify it with the following parameters:
+'duration': 100,
+'max-dart': 1,
+'room-probability': 0.05,
+'room-size': 5
+
+
+Right now, I am trying to center the room size to make it less biased and spawning at the corner of an agent.
+
+Then I have to observe how it works in completing the map
+
+1. Finish random walk generator
+2. See how it can chart the map
+3. Now actually conquer the map and obtain the gridworlds
+4. Conduct training
+5. Observe results
+
+
+Step 1 done
+
+-----------------------------------------------------------------------
+
+
+On step 2;
+
+We are highly successful bois.
+
+Random walker generates maps that can be high in adjacency and high in mpath length.
+
+Interestingly, the maximum it seems to achieve is exactly 2.0 in adjacency. Not sure why it can't get higher. But this is good.
+
+Path length can get insanely high lowk.
+
+Now, from steps 2-3, there are a set of mini steps I have to take:
+
+1. Prove that the chart can be fully explored (done)
+2. Understand which generation methods fit where, and how the variables will be varied (done)
+3. Develop system to record points tagged with generation method and compressed gridworld
+4. Select the gridworlds
+
+
+-----------------------------------------------------------------------
+
+Gridworld compression and decompression:
+
+
+Compression steps:
+
+1. flatten 2D array into 1D
+	- Also remember rows/cols
+2. Convert binary to string
+[Deprecated]3. Compress string further via zlib
+
+
+Decompression steps:
+[Deprecated] 1. Decompress string via zlib
+2. Convert string to binary 1D array
+3. Stack 1D into 2D. 
+	- Remember rows/cols!
+
+
+in python, let's say I have a 2D array of 1s and 0s. Write a function called flatten_gridworld that takes a 2D array of 1s and 0s, and returns a flattened 1D array of all the rows side by side. Also return the original number of rows and cols of the original 2D array
+
+
+
+In python, consider an array of 1s and 0s: [0,1,0,0,0,1,1,0,1,1]
+
+How to convert an arbitrary length array of 1s and 0s into string form? A single character can represent many different bits
+
+
+now write a function that performs the inverse. first, plan out what this would entail, then code it.
+
+Using zlib compress makes the string longer, as the string is already in nonredundant form...
+
+So no zlib.
+
+Compression and decompression done :)
+
+
+
+-----------------------------------------------------------------------
+
+= = = = = Generation method analysis = = = = =
+
+Random-cell: Good for small gridworlds with low path lengths
+
+Perlin-noise: Good for large gridworlds with high path lengths but from adjacencies 0-1
+
+Random-walker: Good for adjacencies 1-0 for high path length; probably low path length also.
+
+Image map made on scratch
+
+
+= = = = = Variables analysis = = = = =
+
+
+
+= = = For random-cell: = = =
+- rows
+- cols
+- weights: [0.9, 0.1] (low) or [0.5, 0.5] (high)
+
+
+low weights for low-adjacency.
+
+high weights for high-adjacency
+
+adjust rows/cols for path length
+
+
+= = = For perlin-noise: = = =
+- rows
+- cols
+- scale
+- threshold
+- octaves and shi: just set to 1
+
+Lower scale means more like random-cell
+Higher scale means more order
+
+scale should directly scale with grid dimensions *pun absolutely intended*
+
+rows,cols, scale to control path length
+
+threshold to control adjacency: lower threshold = higher adjacency
+
+
+
+= = = For random-walker: = = = 
+- duration
+- max-dart
+- room-probability
+- room-size
+
+longer duration = square root increase in path length
+		= less adjacency
+shorter duration = lower path length
+		= more adjacency
+
+max-dart = more or less path adjacency. Also more path length
+
+room-probability = less adjacency
+room-size = less adjacency
+
+
+For adjacency ceiling, do short duration and long max-dart, and 0 rooms
+
+For rest, do 100 or more duration and 1-2 max-dart, and include some rooms
+
+
+
+
+Map made in scratch.. Spent a bit too mjuch time on it but it does give a solid understanding
+
+-----------------------------------------------------------------------
+
+My next step to complete #2 is to now verify whether my illustration is accurate by actually generating (but not saving the gridworlds)
+
+Methodology: Refer to the map, put the configs, and verify whether distribution observation matches
+
+
+Random-cell territory verified
+- high sample size is good
+- yeah vary the simple stuff
+
+
+Perlin-noise
+- A threshold of 0.1 is mostly sufficient; -0.1 is also maybe ok
+- Scale the scale with rows/cols
+- Also vary scale for more results
+- Exact value of 1 is hard to reach; maybe random walker can handle that
+
+Drunken-walker
+- 'Default' settings is like no rooms, 1 dart length. The only variable would be duration
+- In default scenario, it forms this right triangle shape of range
+- Default 100 fulfills everything below up to around 25.
+- Default from 50-500 should fulfill all thy needs for the lower half.
+- No rooms were needed...
+
+- Adding rooms makes the whole thing shift dramatically downward
+
+- Increasing max-dart increases both path length and adjacency
+- To cancel the increase in path length to make it go straight up, we need a corresponding decrease in duration
+- Max-dart of 5 fulfills most requirements with sample like 50 or 30
+
+- Max-dart 10 fulfills the top thing
+
+
+The only last unconquered place is small path length but high adjacency
+	- Because a drunken walk map can never be fully enclosed by walls; it is guaranteed to touch border
+
+
+Perhaps a small modification can be made that ensures that the map is always enclosed
+(offset the position by 1 more and increase the length of grid by 2 (on both axes))
+
+Modification made; new parameter added to drunken-walker: Closed
+
+- closed = True can make everything good in the top left. [updated scratch map]
+
+-----------------------------------------------------------------------
+Now, I must really conquer and obtain the gridworlds
+
+3. Develop system to record points tagged with generation method and compressed gridworld
+4. Select the gridworlds
+
+
+My planned approach:
+
+Each sweep will generate these objects consisting of point, generation method, parameters, and compressed gridworld
+
+Duplicate points OF EACH SWEEP will be removed.
+
+It will be added as a json file to google drive
+
+We will formulate what the required points would be, factoring in compute costs and completion of the map
+
+Then, on the loaded side, we will select the real tagged points. For duplicates, we will choose randomly. What we can do is iterate through each blue point, find the corresponding orange points, and choose at random which one [if there is none, then exception baby time]
+
+Then we will make a new json of the final thing. Make sure to color code based on generation method
+
+Then, I will be able to inspect our complete gridworld space using WASD.
+
+-----------------------------------------------------------------------
+
+Target points:
+
+At i=5, points_per_length = 2*i+2 = 12
+
+
+write a function called def generateIntervals(interval):  that returns an array of (2/interval +1) numbers. In order, they should be the numbers 0, interval, 2interval, 1, ... 2. For example, the input of 1/2 should yield 5 numbers: '[0, 0.5, 1, 1.5, 2]. Likewise, an input of 1/5 should return 11 numbers.
+
+
+Function getClosestPoints (points1, points2)
+#Generates array of length points 1 using numbers from point2
+
+-Create empty array called results
+
+- Repeat index i, value1 through length of points1:
+	- In points2, find the value that is closest to value1
+	- Append this found value to the results array
+
+-Return the array
+
+====== onlinge gdb code:
+
+def generateIntervals(interval):
+    # Calculate the number of elements needed
+    num_elements = int(2 / interval) + 1
+    
+    # Create a list with the values starting from 0 and incrementing by the interval
+    result = [i * interval for i in range(num_elements)]
+    
+    
+    return result
+
+def truncatePoints(points1, points2):
+    # Step 1: Initialize the results array
+    results = []
+
+    # Step 2: Iterate over each value in points1
+    for value1 in points1:
+        # Step 3: Find the closest value in points2
+        closest_value = min(points2, key=lambda value2: abs(value2 - value1))
+
+        # Step 4: Append the closest value to results
+        results.append(closest_value)
+
+    # Step 5: Return the results array
+    return results
+
+
+interval1 = 1/5
+interval2 = 1/101
+
+points1 = generateIntervals(interval1)
+points2 = generateIntervals(interval2)
+
+truncatedPoints = truncatePoints(points1,points2)
+
+print(len(points1))
+print(len(points2))
+print(truncatedPoints)
+print(len(truncatedPoints))
+for value in truncatedPoints:
+    print(value/interval2, '/', 1/interval2)
+
+"""
+for i in range(1,49):
+    points_per_length = 2*i+2
+    print('Length:', i, 'Num Points:', points_per_length, 'Interval: 1 /', (i+1))
+#"""
+"""
+for j in range(points_per_length+1):
+  target_points.append((i,j/(i+1)))
+
+"""
+
+
+-----------------------------------------------------------------------
+
+Ok, this system of truncation is epic!!!
+
+The Truncation limit sits at 1/5
+
+Path length thing is on 2 intervals.
+
+I need to ensure two things:
+1. thoroughness of the search 
+2. computational feasibility/time.
+
+- I believe the y-distribution is ok. My main concern is with the x-distribution, and my choice to change it by intervals of 2.
+- There are only odd-length paths this means. Maybe I should make it even, I suppose.
+- Changed it to even now
+- I think #1 is good.
+
+- Regarding time, I don't have much. I need to submit the abstract by the 6th.
+
+- Currently there are 260 gridworlds in my setup. Before embarking the all out experiment, I need to determine an upper limit for the time it would take in full to ensure I have enough time.
+
+Factors affecting time for each gridworld
+- Num trials 		- Will be constant
+- Num episodes		- Constant or just till convergence?
+- Max steps		- Directly determined from path-length or grid-size
+
+time per step * max_steps * num_episodes * num_trials * 2
+
+Continuous run time = (time per gridworld) * 260
+
+Total time in days = continuous_run_time * 24 hours / cumulative per day run-time 
+
+
+Let's assume:
+time_per_gridworld = 5 mins
+cumulative_perday_runtime = 12 hours
+
+Continuous runtime = 5 mins * 260 = 1300 mins = 21.6666667 hours
+
+Total time taken = 21.6666667  hours * 24 hours / 12 hours = 21.66 *2 = 43.3333334 hours or 1.80555556 days
+
+
+My Approach:
+
+1. Determine the basic hyperparameters for testing (num trials, episodes, steps, etc)
+2. Observe time taken for gridworld tests on real gridworlds,
+	- Especially focus on the maximum worst case but also see others to observe variance
+3. Obtain an estimate for the total time of experiment
+4. Change num of gridworlds accordingly
+5. Harvest the gridworlds and proceed with experiment
+
+
+-----------------------------------------------------------------------
+Regarding Number of trials:
+
+let's say I am conducting a scientific experiment. I want to determine the number of trials I should complete. I am studying algorithmic performance and at the core of it are random sampling. Individual trials should commonly converge, albeit with noisy differences. How many number of trials should I do?
+
+Method to obtain proper number of trials:
+1. Assess the Variation in the Algorithm's Performance
+	- calculate the standard deviation of your results from preliminary trials
+2. Determine Desired Confidence and Precision
+	- Decide on the margin of error (E) you’re willing to accept (e.g., ±5% of the estimated performance value).
+	- Determine the confidence level you want (e.g., 95% confidence corresponds to a Z-score of 1.96).
+3. Use Formula for Sample Size Calculation for a Normal Distribution or Formula for Sample Size for Comparing Two Means
+
+Standard deviation derivation:
+https://www.youtube.com/watch?v=gpKEfVZlPj4
+
+
+
+1. Find gridworld
+2. 
+
+
+-----------------------------------------------------------------------
+Regarding max_steps:
+
+Looking back:
+
+4x4:
+path length: 6
+max_steps: 16
+
+8x8:
+path_length: 14
+max_steps: 64
+
+
+Imagining:
+20x20:
+path length: 38
+max_steps: 400
+
+Sometimes, in drunken walk, the size of the gridworld might be huge but only a small part is traversable.
+
+Therefore, should the max_steps be a function of the number of white cells?
+
+THE DECREE: max_steps = num_of_white_cells * 2
+
+
+-----------------------------------------------------------------------
+
+Alright here's the thing:
+
+We shall overhaul the current gridworld display system. 
+
+Using WASD keys we should be able to navigate from point to point.
+
+The gridworld[s] at the given point will be displayed, along with tagged information:
+	- Point, generation method, hyperparameters, map seed
+
+Refreshing will be done
+
+Copy savewd; deep coding starts
+
+
+"""
+Each gridworld 'object':
+- Point (adjacency, len)
+- rows, cols
+- Gridworld [styled]
+- Gridworld Seed
+"""
+
+-----------------------------------------------------------------------
+
+In python, consider an array called grid_worlds
+
+Each element of the array contains the following dictionary:
+{
+Point: [an x y tuple]
+rows
+cols
+Gridworld
+Gridworld Seed
+}
+
+prompt: I want to plot all the points using matplotlib. But it requires an array of just the points by themselves. WHat expression can essentially take the gridworld array and return an array of the points only?
+
+
+-----------------------------------------------------------------------
+
+This is one navigation function: however, it is flawed. When moving left or right, there has to be something exactly at the same adjacency value. If not, we cannot do transfer.
+
+def move_cursor(cursor_location, moveDirection):
+  if moveDirection == 'w':
+    newPoint = None
+    for grid_info in grid_worlds:      
+      if grid_info['point'][0] == cursor_location[0] and grid_info['point'][1] > cursor_location[1]:
+        if newPoint is None or grid_info['point'][1] < newPoint[1]:
+          newPoint = grid_info['point']
+
+    if newPoint is None:
+      return cursor_location
+    else:
+      return newPoint
+      
+  elif moveDirection == 's':
+    newPoint = None
+    for grid_info in grid_worlds:      
+      if grid_info['point'][0] == cursor_location[0] and grid_info['point'][1] < cursor_location[1]:
+        if newPoint is None or grid_info['point'][1] > newPoint[1]:
+          newPoint = grid_info['point']
+
+    if newPoint is None:
+      return cursor_location
+    else:
+      return newPoint
+
+
+  elif moveDirection == 'a':
+    newPoint = None
+    for grid_info in grid_worlds:      
+      if grid_info['point'][1] == cursor_location[1] and grid_info['point'][0] < cursor_location[0]:
+        if newPoint is None or grid_info['point'][0] > newPoint[0]:
+          newPoint = grid_info['point']
+
+    if newPoint is None:
+      return cursor_location
+    else:
+      return newPoint
+  elif moveDirection == 'd':
+    newPoint = None
+    for grid_info in grid_worlds:      
+      if grid_info['point'][1] == cursor_location[1] and grid_info['point'][0] > cursor_location[0]:
+        if newPoint is None or grid_info['point'][0] < newPoint[0]:
+          newPoint = grid_info['point']
+
+    if newPoint is None:
+      return cursor_location
+    else:
+      return newPoint
+  else:
+    print("Invalid input. Please enter 'w', 's', 'a', or 'd'.")
+    return cursor_location
+
+
+I will modify this to be better
+
+I did it. 
+
+I now spent too much time trying to make the ipywidgets interface.
+
+I can do basic motion.
+
+Now I have to display the gridworlds at each point...
+Spooky scary Skelecode:
+1. Find all grid_infos at the point
+2. Display each point 
+
+Done
+
+-----------------------------------------------------------------------
+1/2
+It's getting late....
+
+
+Now I am putting some funcions like the decompressor and find start/goal state into the other. First Iw ill identif what is there:
+def print_gridworld
+def decompress_gridworld
+def find_start_state
+def find_goal_state
+
+
+List of all functions in simplegrid analysis:
+#Generators
+def generate_gridworld_random(rows, cols, weights = [0.5,0.5]):
+def generate_gridworld_perlin(rows, cols, perlin_parameters):
+def generate_gridworld_walker(walker_parameters):
+
+#Print
+def print_gridworld(grid):
+
+#Compress/Decompress
+def compress_gridworld(grid):
+def decompress_gridworld(string, rows, cols):
+
+#Gridworld data
+def check_connectivity(gridworld):
+def find_start_state(grid):
+def find_goal_state(grid):
+def find_shortest_path(grid, start, goal):
+def count_adjacent_walls(grid_world, x, y):
+def find_average_adjacency(grid_world, path):
+def find_independant_variables(grid_world):
+
+#Data analysis
+def plot_points(points, use_opacity = True, change_dimensions = True):
+
+#User Mover Interface
+def distance(p1, p2):
+def move_cursor(p1, moveDirection):
+def handle_input(input):
+
+
+For the functions in #Generators, Print, C/D, and G Data, it all seems to fit in the form of a object.
+
+Saved a copy; Get ready for some code overhauling
+
+
+That took too much time, but I have successfuly made everything in class form.
+
+I should try to put this monstrous thing into its own file and then include in both her and simplegrid ql vs sarsa
+
+Then I actually see some performance evaluations on em gridworlds
+
+https://colab.research.google.com/github/wjbmattingly/python_for_dh/blob/main/01_intro/01_05-04_multiple_files.ipynb#scrollTo=dependent-greeting
+
+Got it to work thanks to: https://stackoverflow.com/questions/52733786/how-to-import-custom-modules-in-google-colab
+
+
+YOOOO!O!O!O!O!O IT WORKS import gridworld as Gridworld 
+
+
+There was a problem copy and pasting the string seed to use. Something in the process of printing, copying from console, pasting into code, and interpreting is changing the data somehow. When this happens, the grid becomes altered significantly, although there seems to be a mild semblance in some parts of the grid. 
+
+I have two options:
+	A: Transfer seeds by means of file saving and loading
+	B: Overhaul the compress/decompress system to use characters that are not compromised in this process
+
+I am going to use base-64 encoding.
+
+
+Was able to do it with hexadecimal. I have no ### clue why it anyways was not working. Actually, the hexadecimal decode doesn't work if we are speaking technically. But I found that, no matter what, if there are remainders, it adds 4 extra characters. so my fix was to just truncate it by 4.
+
+My next step is to generate 1000 random cases of random length random 0s.
+	Test ppassed
+
+Then do the same but with a whole ### bunch of generated gridworlds.
+	
+
+my seeds now includes rows and cols embedded into them so all the information can be contained in just one string.
+
+Pushed changes into Gridworld
+
+-----------------------------------------------------------------------
+Next steps:
+
+1. Play around with performance comparsion between official gridworlds
+2. Allow for subclassing simplegrid to conform to my constants/settings specified very early on
+3. Move the Agent class into its own google drive py file
+4. Determine hyperparameters; estimate time
+5. Prepare for experiment
+
+
+-----------------------------------------------------------------------
+Strategic Plan:
+
+1/2 Thurs
+	- Do the above next steps #1-3
+1/3 Fri
+	- Do above next steps #4-5
+	- Start experiment
+	- Understand science fair forms/plans
+	- Start research plan
+1/4 Sat
+	- Ongoing experiment
+	- Research plan
+1/5 Sun
+	- Finish experiment
+	- Analyze results
+	- Finish research plan
+1/6 Mon
+	- Write abstract
+	- Do Forms
+1/7 Tue
+	- Get Urbina to sign forms
+	- Submit the jit
+1/8 Wed
+	- Buffer
+
+
+
+
+-----------------------------------------------------------------------
+
+I am working with a gridworld that has the following characteristics:
+shortest_path_length 25
+avg_adjacency 1.1923076923076923
+num_white_cells 151
+
+I am using the hyperparameters:
+episodes = 500
+max_steps
+ = 302
+num_of_trials = 300
+
+QL's set of training took about 8 mins
+SARSA took about 11 mins
+
+about 20 mins total
+
+I am happy with the consistency of the result.
+QL first goes ahead of SARSA, then SARSA is above QL, then eventually, QL converges again above SARSA.
+
+
+
+Current episodes formula: Path_length * 20
+Current max_steps formula: num_whites * 2
+
+Current num_of_trials: 500
+
+Recall formula for time per trial: 
+time for test = time per step * max_steps * num_episodes * num_trials * 2
+
+Let's solve for time per step:
+
+20 mins = time_per_step * 302 * 500 * 300 * 2
+
+20 mins = time_per_step * 90600000
+
+time_per_step 	= 2.20750552e-7 mins 
+		= 0.000000220750552 mins
+		= 1.32450331e-5 seconds
+		= 0.0000132450331 seconds
+		- 13.24 microseconds
+
+Seed I've used: [20x15]f807f00fe01fc03f807f007a0080006401d803f007e00fc01fc03f807fb3ff07ff9fffbfff7
+-----------------------------------------------------------------------
+I'm going to try the same thing but with slippery on; just to see... it will take 25 mins is my guess.
+
+Uh... it's been almost 20 mins and we are not done with QL... meaning... it might take 50 mins.
+Now over 30 still on QL!?!?
+QL took 35 mins;
+
+SARSA shall be projected to take 35 more, 12:40 + 35 = 1:15
+
+
+time: 1:05. Speed: 3 trials / 20 seconds
+
+205 trials left...
+
+205 trials * 20 seconds/3 trials = 1366 seconds = 23 minutes.
+
+1:05+ 23 = 1:28.
+
+Projected complete time: 1:28 
+Actual: 1:17
+
+With slippery = on, QL always outperforms SARSA, both in short, middle, and long terms.
+
+
+
+-----------------------------------------------------------------------
+
+Next, I am using this seed: [11x19]00ffe003fc0001800000000000000000000000000000000000000A
+
+shortest_path_length 28
+avg_adjacency 0.0
+num_white_cells 188
+
+max_steps =  376
+episodes =  560
+num_of_trials = 300
+
+
+ESTIMATE BY TIME FOR TEST FORMULA:
+time_per_step is estimated to be 0.000000220750552 mins
+
+time for test = time per step * max_steps * num_episodes * num_trials * 2
+
+time for test = 0.000000220750552 mins * 376 * 560 * 300 * 2
+
+
+time for test = 27.8887417 mins
+= - =
+Estimated duration: 28 mins
+
+Start Time: 9:25
+Projected end time: 9:53
+= - =
+
+ESTIMATE BY RISE OVER RUN:
+
+(trial2-trial1)/(time2-time1) = speed in trials per minute
+
+2* total_num_of_trials / trials per minute = estimated total elapse time:
+
+trial1: 10
+time1: 14:25
+
+trial2: 293
+time2: 14:31
+
+
+(283)/(6) = speed in trials per minute
+
+speed in trials per minute = 47.1666667 per minute
+estimated total elapse time = 12.720848 mins,
+
+= - =
+Estimated duration: 13 mins
+Start Time: 9:25
+Projected end time: 9:38
+
+= - =
+
+
+
+-----------------------------------------------------------------------
+Estimate by Rise over run seems to be the most effective.
+
+The formula was vastly over estimative
+
+REcall the formula
+
+time for test = time per step * max_steps * num_episodes * num_trials * 2
+
+IN reality, instead of max_steps, it would be more accurate to say 'average_steps'.
+I suppose the act of using max_steps serves as a natural upper-limit, which we want.
+
+Todo:
+1. Implement compression/decompression for the history lengths
+2. Implement real-time Rise over Run end-time estimation
+3. Prepare for analyzing for standard deviation of convergence value
+
+
+ENCRYPTION OF HISTORY
+
+Numbers: -255 to 256 for 512 number system
+Numbers: -127 to 128 for 256 number system
+
+Let's say I have an arbitrary-length list of integers which are in the range -127 to 128. What would the most straightforward way of compressing this information into a list be?
+
+Let's just do some simple run-length encoding.
+
+- Make sure each reward is an integer when storing
+
+1. Convert float values to integer values
+2. Convert arbitrary list to run-length encoding
+3. When storing to json, make everything on the same line. Try to remove spaces also
+
+3. Convert string to list
+4. Convert list to real list.
+
+-----------------------------------------------------------------------
+
+New seed:
+
+[7x5]38c202000AAA
+
+shortest_path_length 10
+avg_adjacency 0.0
+num_white_cells 28
+
+max_steps 56
+episodes 200
+num_of_trials 300
+
+
+-----------------------------------------------------------------------
+"[11x32]fffff7ff41efe7ff0043e0ffe703e031fe007031fe404000fc400001ffc03c33ffc43ffffff07ffffffe7fff"
+
+shortest_path_length 37
+avg_adjacency 0.6578947368421053
+num_white_cells 140
+
+max_steps 280
+episodes 740
+num_of_trials 300
+
+
+Estimated speed sits around 24 trials per min
+
+Started at 
+
+11:43
+
+Total number of trials to complete: 600
+
+Estimated duration: 600/24 = 25
+Estimated finish time: 12:08
+
+Actual duration: 31
+Actual finish time: 12:14
+
+SARSA's speed was significantly lower than QL's 
+
+-----------------------------------------------------------------------
+
+"[20x20]1ffc00ff800ff0307c070701f0603f0003f0003f0303f87c00fff81fffc1fff83fff87f8f07f0007f8007f8003fe000ff000"
+
+Saved into Hey5
+
+shortest_path_length 38
+avg_adjacency 0.3076923076923077
+num_white_cells 211
+
+max_steps 422
+episodes 760
+num_of_trials 300
+
+
+Estimated speed: 18 trials per min
+
+Started at 12:34
+
+Total number of trials to complete: 600
+
+Estimated duration: 600/18 = 33.3333333 mins
+Estimated finish time: 1:07
+
+Actual duration: 40 mins
+Actual finish time: 1:14
+
+
+Interesting... SARSA, instead of going towards the goal, finds itself more comfortable going in circles away from the walls. It is too cautious!
+QL is careless; it goes for it, and, it ends up winning!
+
+
+-----------------------------------------------------------------------
+
+My plan is now to subclass simplegrid.
+
+I don't think I will directly subclass it. Rather, I may be able to make some code extensions around it that will artificially simulate certain mechanics.
+If I don't want walls to give a negative reward, I could manually do that.
+I could make walls terminal.
+I could multiply the effect of certain rewards.
+I've already done this with allowing for slipperization.
+To the agent, it's all the same thing
+
+
+"
+I think the walls can be made non-terminal, but their cost oshuld be ooked into. I also think the border and walls distinction should be rethought.
+
+yes	I think gamma should be 0.99 instead of 0.95. We want SARSA to be encouraged to take the safer/patient path. 
+"
+
+1. borders will be made non-punishment. This is final
+2. Cost: let's raise the cost to maybe 3 of the wall cells. Observation needed.
+3. Gamma is 0.99 (i already did this)
+
+
+-----------------------------------------------------------------------
+
+FUCK FUCK FUCK FUCK FCUK FUCK FUCK FUCK FUCK
+
+My google colab has not been saving since 9:30 AM. Right now it is 6:30 PM.
+I have lost most of the day's entire work...
+
+Things I have lost:
+
+	1. Returnlist compression/decompression
+	2. Real-time trials per minute speed estimation
+3. Playback (which is a fairly hefty thing man)
+4. Border monitoring nad whatnot
+
+-----------------------------------------------------------------------
+Recall:
+
+Compression
+1. Convert float values to integer values
+2. Convert arbitrary list to run-length encoding
+3. When storing to json, make everything on the same line. Try to remove spaces also
+
+Decompression
+1. Convert string to list
+2. Convert list to real list.
+
+
+Done
+
+-----------------------------------------------------------------------
+Recall:
+
+(trial2-trial1)/(time2-time1) = speed in trials per minute
+
+Done
+
+-----------------------------------------------------------------------
+For playback,
+
+We could initialize the agent as Train and Playback
+
+Train include:
+	env
+	env_options
+	algorithm
+	epsilon_mode
+	epsilon
+	episodes
+	max_steps
+	alpha
+	gamma
+	num_of_trials
+	table_init_mode
+	use_slipperization
+
+playback includes:
+	env
+	env_options
+	q_table
+	max_steps
+	use_slipperization	
+
+
+DONE!!!!!11!
+
+-----------------------------------------------------------------------
+I have most part reclaimed the lands...
+
+I will now do a new gridworld to test my technologies
+
+"[10x10]e04011c441605c17cdf739c41"
+
+shortest_path_length 16
+avg_adjacency 0.8235294117647058
+num_white_cells 59
+
+max_steps 118
+episodes 320
+num_of_trials 300
+
+Estimated speed: 90 trials per min
+
+Average estimate (ig): 80 trials per min
+
+
+600/80 = 7.5 mins
+
+
+IMPORTANT NOTE:
+
+Episodes number was NOT ENOUGH!!!
+
+I will subclass gridworld then handle this.
+
+-----------------------------------------------------------------------
+
+Info['agent_xy']
+
+  def isBorderInsuranceEligible(rows, cols, pos, action):
+
+
+    directions = [
+        (-1, 0), #UP
+        (1, 0),  #DOWN
+        (0, -1), #LEFT
+        (0, 1)   #RIGHT
+    ]
+
+    p = tuple(map(sum, zip(pos, directions[action])))
+
+    if p[0] < 0 or p [0] >= rows or p[1] < 0 or p [1] >= cols:
+      return pos, True
+    else:
+      return p, False
+
+
+  def slipperize_action(self, action):
+    #For the selected action, we will simulate stochasticity by selecting a randomized version of that action.
+    #If action is 0 (up), the result will might be 0, 2(left), or 3(right) with equal (33.3333% for each) probability.
+    #Same for all other actions, the result will be a probability of that action and the two adjacent actions.
+
+    if action == 0: #UP
+      return np.random.choice([0, 2, 3])
+
+    elif action == 1: #DOWN
+      return np.random.choice([1, 3, 2])
+
+    elif action == 2: #LEFT
+      return np.random.choice([2, 1, 0])
+
+    elif action == 3: # RIGHT
+      return np.random.choice([3, 0, 1])
+
+  def unpack_data(self):
+    return {
+    'hyperparameters': {
+        'algorithm': self.algorithm,
+        'env': self.env.spec.id,
+        'env_options': self.env_options,
+        'epsilon_mode': self.epsilon_mode,
+        'table_init_mode': self.table_init_mode,
+        'use_slipperization': self.use_slipperization,
+        'episodes': self.episodes,
+        'max_steps': self.max_steps,
+        'alpha': self.alpha,
+        'gamma': self.gamma,
+        'epsilon': self.epsilon if self.epsilon_mode == "CONSTANT" else "N/A"
+    },
+    'results': {
+      'avg_elapsed_training_time': None,
+      'avg_episodic_returns': None,
+      'sample_q_table': None
+    },
+    'history': []
+  }
+
+
+
+I was just able to subclass mah boy SimpleGridEnv. In GitHub, it shows the file structure.
+All I had to do is outline this structure to good old GPT and it told me how exactly I should subclass it. Specifically:
+
+from gym_simplegrid.envs.simple_grid import SimpleGridEnv
+
+my prompt included "However, I have little understanding of how these modules work and how my python code accesses it."
+
+I am now using the formula:
+
+episodes = path_length * 30
+
+-----------------------------------------------------------------------
+"[10x10]e04011c441605c17cdf739c41"
+
+shortest_path_length 16
+avg_adjacency 0.8235294117647058
+num_white_cells 59
+
+max_steps 118
+episodes 480
+num_of_trials 300
+
+trials		60 sec				trials
+/	* 	/		=	60 *	 /
+sec		1 min				min
+
+
+			sec
+numTrials	*	/
+			trials
+
+
+Even with episodes = path_length * 30, it seems that there is still and upwards trend.
+
+in reinforcement learning, we are often presented with a return over episodes graph. We usually want to train the model until convergence has been reached. However, based on a given graph, how can we really determine if convergence has been reached?
+
+I think my policy should be:
+
+set episodes = path_length *30.
+
+After experiment, determine if convergence has been reached via Threshold-Based Criterion Conrvergence
+	Improvement Threshold: if the difference is < 0.1, then we are ok
+	Window of Episodes: let's put this at 100. 
+		- Let 0 be the element at the end
+		- Let -100 be the 100th last element
+		- We will compare the mean of the elements from -100 to -91, and elements -10 to -1. [inclusive] [this is the song of dhol factory]
+
+If not, repeat with double the episodes
+
+
+
+UPDATE TO EPISODES RULE: Initial episodes = max(path_length * 20, 200)
+
+-----------------------------------------------------------------------
+
+Ok, I have comfirmed that my in_bounds modification has been applied.
+
+I want to see SARSA win at least once. I'm going to make a cliff walker one, by hand.
+
+I want to test for 3 things:
+	1. Does SARSA win? If not, increase the cost of walls
+	2. How does my convergence system work? (intentionally reduce initial amount of episodes)
+	3. How does the out of bounds thing work
+
+Implemented convergence detection
+Made gridworld
+Ran tests til convergence
+Ran performance captures
+
+#2 fulfilled.
+
+
+For some reason, QL is also taking a somewhat cautious path. Even though its not accounting for epsilon.
+Perhaps this is because of the effects of having a randomly initialized Q-table. It has observed that, when it goes near, it's suboptimal q_table anyways goes there.
+
+IDEA: What if high gamma is causing this? If gamma was lower, both QL and SARSA would start to become more 'impatient'. This might solve everything. QL would do what it's supposed to, and SARSA would at least finish.
+
+Ok... I'm not sure much exactly changed...
+
+I'm going to increase the cost of the walls and see,
+
+Nah. SARSA's performance kind of is same to QL, but this is superficial: QL still does that weird somewhat cautious path and SARSA is still too scared to explore
+
+Now I am going to remove gamma and introduce the punishment of existence
+
+Oh, I did it wrong. I make walking around -1, but I did not update the cost of going into a wall.  Going into a wall gives a reward of 0. So our agents become addicted to the wall, a little painkiller, that takes away its constant nagging pain of existence for the luxury of simply not having any pain
+
+Bro... I am losing my sanity. QL and SARSA just keep going into a wall. The only differences in the environment are the +1 goal reward and the shortened border thing.
+
+U know what, I am going to try with an expanded border...
+
+But I'm going to revert all these 'Cliffwalker-like' environmental settings and return to monke.
+
+I will proceed with the experiment as planned. Even if SARSA never beats QL, that's not the point. My question is why QL outbeats SARSA at all. My hypothesis is that, as reward sparsity increases, QL outbeats SARSA more. My experiment is to test this hypothesis. I might truncate the adjacency values for this.
+
+Yeah I'm so done bro...
+
+
+
+-----------------------------------------------------------------------
+
+I'm going to return to monke, and then go ahead and:
+
+Determine hyperparameters; estimate time
+
+
+Reviving:
+
+"[11x32]fffff7ff41efe7ff0043e0ffe703e031fe007031fe404000fc400001ffc03c33ffc43ffffff07ffffffe7fff"
+
+shortest_path_length 37
+avg_adjacency 0.6578947368421053
+num_white_cells 140
+
+max_steps 280
+episodes 740
+num_of_trials 300
+
+
+It will be done by before 6:30. Earliest is 6:25
+
+Ok, I have officially returned to monke indeed real fr
+
+-----------------------------------------------------------------------
+Now for determining the number of trials.
+
+I will use the formula based on the results from a gridworld evaluation, 
+
+Use Formula for Sample Size Calculation for a Normal Distribution 
+or 
+
+Formula for Sample Size for Comparing Two Means
+
+My Confidence level will be 95%
+My Power LEvel will be 80%
+My Desired Detectable Difference will be 0.1 
+
+-----------------------------------------------------------------------
+Hey7:
+"[20x20]fc007fc001fc041e00e0801f0803e0801e080080c0000e0000e0000e0000f07c1f07e3f87e3fe000ff018ff01c7e03e000fe"
+
+shortest_path_length 33
+avg_adjacency 1.0
+num_white_cells 259
+
+max_steps 518
+episodes 660
+num_of_trials 500
+
+Estimated end time: 7:40-7:50
+
+Im going to take a break and let this run.
+
+My next steps would be to develop a system to calculate the standard deviation of the last return values
+I will evaluate this current thing as well as the past thing in Hey6/HeyAgain just for comparison
+
+Then I can essentially calculate the formula. 
+
+
+-----------------------------------------------------------------------
+HeyAgain:
+QL: 	a1 = 0.5886330681238431
+SARSA: 	a2 = 1.1376144631054348
+
+Hey7:
+QL: 	a1 = 0.5915234568468101
+SARSA: 	a2 = 0.42415091653797005
+
+
+Confidence Z:	z1 = 1.96
+Power Z:	z2 = 0.84
+
+Desired Detectable Difference: d = 0.1
+
+(2(z1+z2)^2 *(o1^2+o2^2))/d^2
+
+(2(1.96+0.84)^2 *(o1^2+o2^2))/0.1^2
+
+
+HeyAgain:
+(2(1.96+0.84)^2 *(o1^2+o2^2))/0.1^2
+=
+2577.89654
+which is a lot...
+
+Hey7:
+830.732672
+
+Let's use say 500 trials...
+
+-----------------------------------------------------------------------
+Ok, so I have settled on the set of points of the gridworlds I am going to test.
+
+It is somewhat weird:
+
+
+adjacency from 0-1 (not 2)
+
+intervalTruncateLimit = 1/4
+
+range1= range(1,4,1) #Pre-truncation
+range2= range(4,7,1) #Truncation but still increment by 1
+range3= range(7,49,4) # Truncation and increment 4
+
+
+
+There would be 82 points total.
+
+My next steps are:
+1. Obtain the gridworlds
+	- Open a new folder where I will keep the raw data on the points (tagged with seed, etc)
+	- Use the chart I've made to generate and map out the area we need to cover, and use the plotter code to see my progress
+	- Load them in the plotter code, sort them based on their point
+		- First sorted by x, then those of equal x are sorted by y. Smallest to largest
+	- Remove duplicate points and save what might be our official set of gridworlds
+	- Inspect gridworlds myself
+	- Maybe make a rudimentary time estimate
+2. Set up experiment code
+	- We have already set up the process of conducting one experiment
+	- Create a function that just does this
+	- Then our code will be doing that function in the systematic order we want.
+		- Repeat doubling episodes until convergence is reached
+		- Set proper file location each time automatically
+3. Run the experiment
+	- Implement proper google colab protocols to maximize time avaliable
+	- Record the log/output of the code
+	- The result for each point would be the last average return for QL and SARSA.
+	- Do other stuff in the meantime
+4. Analyze Data
+	- Run proper statistical tests
+	- Devise method to make a single number to compare QL and SARSA for each point
+	- Make heatmap that shows the differences
+	- 
+	- 
+
+-----------------------------------------------------------------------
+My objectives for today:
+
+- Do above steps 1-2					- 2 hours
+- Do background research and obtain the sources		- 2 hours
+- Write Rationale					- 1 hour
+- Print/start forms					- 1 hour
+
+
+-----------------------------------------------------------------------
+
+Each point will be tagged with just the seed.
+
+The generation method and parameters can be expressed in the file name.
+
+
+Junk code. Impressive, but after coming back to it, it is a bit excessive.
+for target_point in target_points:
+    hitlist = []
+    
+    for group_name, objects in grid_worlds.items():  # Iterate over each group
+      for index, obj in enumerate(objects):  # Iterate over each object in the group
+        if obj['point'] == target_point:  # Check if 'points' matches target_point
+          address = [group_name, obj]  # Create the address of the object
+          hitlist.append(address)  # Add the address to the result list
+    
+    #print(len(hitlist))
+    survivor = random.randint(0, len(hitlist)-1)
+
+    for index, address in enumerate(hitlist):
+      if index == survivor:
+        continue
+      grid_worlds[address[0]].remove(address[1])
+    
+    #hitlist_list.append(hitlist)
+
+print(f"Length of actual points: {sum(len(value) for value in grid_worlds.values())}")
+
+-----------------------------------------------------------------------
+
+
+ESTIMATE BY TIME FOR TEST FORMULA:
+
+time for test = time per step * max_steps * num_episodes * num_trials * 2
+
+
+max_steps = num_white_cells * 2
+episodes = max(shortest_path_length * 30, 200)
+num_of_trials = 500
+time_per_step = 0.000000220750552 mins
+
+TOTAL TESTING TIME: 79 hours
+
+
+Alright so I completed step #1. I'm going to focus on getting the forms done now.
+
+I gotta do:
+	- Research Plan
+	- Abstract
+	- Form 1 Adult Sponsor
+	- Form 1A
+	- Form 1B
+	- Form 3 Risk Assessment
+	- 
+	- Release And Consent
+
+
+I am observing the comparative performance of two algorithms, algorithm A and B, over the variables/parameters X and Y. I am thinking of making  a 2D heatmap which shows the X-Y parameter space and colors more red for higher A performance and blue for more B performance. Although I have included Y as a variable I am testing for, the main purpose of my experiment is to evaluate if the X parameter is a strong predictor/correlator with comparative performance. What statistical test should I do?
+
+-----------------------------------------------------------------------
+
+I am observing that some of the points are innacurate to the gridworld. Perhaps the points are getting mismatched. First I must determine whether the source of this error is coming from the saved raw file data or from the sorting/selection process in the 
+
+
+It seems that this is problem originating in the raw file data itself
+
+Here seems to be the files that are hosting false data:
+Random 2x3 weak.json, Random 3x4 weak.json, Random 4x5 weak.json
+
+
+I will compare the code for calculating and storing the points in both the main thing and then the import thing
+
+Main thing:
+my_gridworld = Gridworld(generation_method, parameters)
+
+shortest_path_length, avg_adjacency, styled_grid_world = my_gridworld.find_independent_variables()
+
+point = (shortest_path_length, avg_adjacency)
+
+seed = my_gridworld.compress()
+
+
+
+Import thing:
+    new_gridworld = Gridworld('Seed', {
+        'seed': grid_info['seed']
+    })
+
+    shortest_path_length, avg_adjacency, styled_gridworld = new_gridworld.find_independent_variables()
+
+    avg_adjacency = round(avg_adjacency, 4)
+    grid_worlds[index]['recalibrated'] = {
+        'shortest_path_length': shortest_path_length,
+        'avg_adjacency': avg_adjacency,
+    }
+
+
+The ONLY difference:
+- Main generates a new one, whereas Import generates using seed
+
+Theory A: The problem lies within the compression decompression process. The gridworld is not copied perfectly and this causes the points to be different 
+Theory B: There could also be an issue with the storing/retrieving of the seed strring
+
+The only caveat I see with this theory is the fact that these abnormalities are not present with the larger gridworlds.
+
+I can test Theory A right now:
+	- Turn file save off
+	- Use one of the known troublemaker generation parameters
+	- Generate the point and gridworld,
+	- Then compress the gridworld as usual
+	- But then make a second decompressed gridworld and do make point values for that
+	- If the first point does not equal the second point for any of them, theory A is correct
+
+Ok... it seems that there is no problem with the seed itself, it's just that the goal state is being generated in different places. The 'main' generation is wrong.
+
+Also, specifiying rows and cols is not working for some reason..
+
+YO I think it has to do with rows and cols... I set rows to 2 and cols to 5. Yet it makes it 5 x 5. But the goal state is made as if rows is 2, even though there are 3 more rows below.
+
+GAHHHH I FOUND IT  :     
+  def generate_gridworld_random(parameters): #rows, cols, weights = [0.5,0.5]
+      rows = parameters['cols']
+      cols = parameters['cols']
+
+This aligns with everything I have observed so far
+
+I need to fix this in gridworld.py, then redo the experiments
+
+The only generation runs I need to redo are the random ones that have unequal amount of rows/cols.
+
+
+I will use sample_size 10,000
+
+Random 2x3 weak
+
+Random 3x4 weak
+Random 4x5 weak
+Random 5x6 weak
+
+
+ALRIGHT; EVERYTHING LOOKING GOOD!
+
+
+-----------------------------------------------------------------------
+
+
+Implemented Step 2
+
+
+Running worked until episode 17.
+
+The reason being convergence was not reached for the first time. When the system restarted with double the episodes, the hyperparameter check was flagged as the existing file has the original num of episodes. So what I have to do is automatically delete the file if we are restarting due to new episodes.
+
+This will leave an unfixed problem: if we were to stop the program when it is in the middle of training for episodes double or quadruple the original, then run it again, it will start at the original amount of episodes, and then flag for inconsistency. In this somewhat rare case, I will have to manually go and delete the json
+
+
+-----------------------------------------------------------------------
+Hacking google colab
+
+https://www.youtube.com/watch?v=5VkKlHuE4JQ
+
+https://gist.github.com/amrrs/32e4f4a4c8a12f7f53bada6fbb7b4cdf
+
+
+
+
+function ConnectButton(){
+    console.log("Clicked"); 
+    document.querySelector("#top-toolbar > colab-connect-button").shadowRoot.querySelector("#connect").click() 
+}
+
+var colab = setInterval(ConnectButton,50000);
+
+//clearInterval(colab)
+
+
+-----------------------------------------------------------------------
+1/15:
+Gridworld 2 started at 5 PM
+Gridworld 19 started at around 6:15 PM
+Gridworld 40 at 7:52 PM. so far everything is running smoothly
+
+1/16:
+It ran from 1 AM to 7 AM overnight
+
+I continue running from 9:30 to 11:30 Currently on 67; am almost done but it has taken an hour.
+
+Starting again at 12:06-1:30
+
+Starting continued through CS club, SSC, and physics class
+
+Starting at 11 PM:
+
+1/17:
+Disconnected around 6 AM
+
+Restarted at 7:30 AM
+
+Finished code at 8:30 AM
+
+
+TOTAL RUN TIME CALCULATION
+
+Times			Durations
+6:00 PM - 7 AM		13 hrs
+9:30 AM - 11:30 AM	2 hrs
+12:06 PM - 7 PM		7 hrs
+11 PM - 6 AM		7 hrs
+7:30 AM - 8:30 AM	1 hr
+Total:			30 hrs
+-----------------------------------------------------------------------
+
+I am beginning on the data analysis.
+I have assigned each point to the QL over SARSA ratio.
+
+My next step would be to somehow normalize the points into a grid to put into a heatmap.
+
+
+In python, let's say I have a dictionary, containing 2D-tuples or 'points' as keys and a numbers as values. I want to plot a heatmap using this data, however heatmaps (such as matplotlib's) require a 2D array of values as data, which require that the points fit into a precise grid (the points are not discretely arranged, they are continuous values). How would I plot a heatmap?
+
+{
+(2, 0.0): 1.32378932484977, (2, 0.3333): 1.1867694603332504, (2, 0.6667): 1.2118811881188116, (2, 1.0): 1.1142290249433107, 
+(3, 0.0): 1.3085106382978722, (3, 0.25): 1.2493843743004254, (3, 0.5): 1.1713109563014568, (3, 0.75): 1.215658475110271, (3, 1.0): 1.142118863049096, 
+(4, 0.0): 1.2723880597014925, (4, 0.2): 1.2606073659272024, (4, 0.4): 1.1456765345375477, (4, 0.8): 1.0870418848167538, (4, 1.0): 1.0466171617161717, 
+(5, 0.0): 1.2284033163947576, (5, 0.3333): 1.192985711634812, (5, 0.5): 1.1658354114713219, (5, 0.8333): 1.131989871280861, (5, 1.0): 1.0384222687946691, 
+(6, 0.0): 1.2013924703455392, (6, 0.2857): 1.1672840709689998, (6, 0.5714): 1.0638320432615842, (6, 0.7143): 1.1251129994576028, (6, 1.0): 1.0793012366430543, 
+(7, 0.0): 1.2180082559339527, (7, 0.25): 1.0646603611349958, (7, 0.5): 1.0952023988005999, (7, 0.75): 1.1198387096774192, (7, 1.0): 1.0155396122729357, 
+(11, 0.0): 1.1724305893813936, (11, 0.25): 1.3049612038561016, (11, 0.5): 1.2485700277823173, (11, 0.75): 1.0756854223496233, (11, 1.0): 1.1256384906903936, 
+(15, 0.0): 1.108646446355817, (15, 0.25): 1.050545333695882, (15, 0.5): 1.0562444641275466, (15, 0.75): 1.0382881367337327, (15, 1.0): 1.0877366828249284, 
+(19, 0.0): 1.1047727272727272, (19, 0.25): 1.0489835430784122, (19, 0.5): 1.0264337208547119, (19, 0.75): 1.0333313251197398, (19, 1.0): 1.0773246157496508, 
+(23, 0.0): 1.0943605683836586, (23, 0.25): 1.017639983963651, (23, 0.5): 1.060528321056642, (23, 0.75): 1.101422162832872, (23, 1.0): 1.2308629088378567, 
+(27, 0.0): 1.165244191559981, (27, 0.25): 1.219406150583245, (27, 0.5): 1.1054820730388486, (27, 0.75): 1.1202396141951947, (27, 1.0): 1.166920645671069, 
+(31, 0.0): 1.2545222929936302, (31, 0.25): 1.0067043048694426, (31, 0.5): 1.033280135873146, (31, 0.75): 1.0635882602757023, (31, 1.0): 1.129302536231884, 
+(35, 0.0): 1.3081627226801382, (35, 0.25): 1.1567868376481973, (35, 0.5): 1.0470308392104495, (35, 0.75): 1.0485997468119925, (35, 1.0): 1.048745595277535, 
+(39, 0.0): 1.5373040752351101, (39, 0.25): 1.0856684443640965, (39, 0.5): 1.113928803885245, (39, 0.75): 1.058613207418426, (39, 1.0): 1.2012254111576912, 
+(43, 0.0): 1.8477043673012317, (43, 0.25): 1.0686155254725003, (43, 0.5): 1.0529098581873495, (43, 0.75): 1.1009470904289227, (43, 1.0): 1.0312562612702865, 
+(47, 0.0): 2.1923246581385087, (47, 0.25): 1.0695578146126496, (47, 0.5): 1.0551617739094996, (47, 0.75): 1.049357541534319, (47, 1.0): 1.1638919555457423
+}
+
+
+
+
+A value of 0 should be 6/6
+
+A value of 1 should be 5/6
+
+A value of 2 should be 4/6
+
+Proposition:
+1-(x/2)
+
+0: 1
+1: 1/2
+2: 0
+
+
+Proposition:
+(1-(x/2)) +(4/6)
+
+0: 10/6
+1: 7/6
+2: 4/6
+
+Proposition:
+((1-(x/2))*(2/6)) +(4/6)
+
+0:  6/6
+1:  5/6
+2:  4/6
+
+
+-----------------------------------------------------------------------
+
+"""
+#Iterate through points_to_scores and find the x value of the point. 
+# Put the corresponding score into the x_to_scores dictionary with the x coord only as the key
+  # If no score exists at that key, store it as normal
+  # If a score already exists at the key in x_to_scores, add the score with the additional score
+for point, score in points_to_scores.items():
+  x_to_scores[point[0]] = x_to_scores.get(point[0], []) + [score]
+
+#For x_coord, score in x_to_scores, replace each list with the average
+for x_coord, scores in x_to_scores.items():
+  x_to_scores[x_coord] = sum(scores)/len(scores)
+
+x_coords = np.array(list(x_to_scores.keys()))  # List of 2D points
+values = np.array(list(x_to_scores.values()))  # Corresponding values
+
+print(f'x_to_scores: {x_to_scores}')
+
+"""
+
+
+-----------------------------------------------------------------------
+
+I have obtained the heatmap and path_length to score scatterplot.
+
+From a glance, the results are not exactly what I envisioned in my hypothesis.
+
+First of all, let's talk about the 2-requirements model.
+
+Although this wasn't the point of the experiment, I predicted that increasing Y (path_adjacency) would correlate higher with SARSA performance.
+
+What actually happens is that SARSA's performance is highest around the middle of this distrubtion, at y=0.6
+It decreases again afterwards slightly with increasing path adjacency.
+
+I believe this is the case because, with super high path_adjacencies, requirement #2 (there's an alternative path you can take) starts to not be fulfilled as much. This makes sense. The more crowder the maze becomes, the lest likely there are going to be alternative paths, let alone ones that give a significant advantage. 
+
+However, there are uncertainties I have. In the bottom right corner, where there are no wall cells and the length of the grid is massive, why does QL outperform SARSA to such an extreme extent? This part is technically in line with my main hypothesis however.
+
+Also, towards the left, when path_length becomes very low, it appears that SARSA is dropping in performance relative to QL again, especially with low path_adjacency. I am not sure why this is the case as well.
+
+I am planning to conquer these uncertainties while doing the mathematical experiment.
+
+For now, I will just continue along with my person correlation test. Just from looking at the data, I don't think there is a significant enough correlation to really support my main hypothesis. 
+I will have to see.
+
+
+
+
+-----------------------------------------------------------------------
+1. Find Pearson Coefficient
+2. Find test statistic
+3. Find degrees of freedom
+4. Find p value
+5. Compare to 0.05 significance value
+
+
+### ### ### STATISTICAL TESTS ### ### ###
+Correlation coefficient: 0.11389320094509137
+P-value: 0.31758825093032683
+
+0.31758825093032683 <= 0.05? No
+
+The result is not statistically significant.
+
+
+
+-----------------------------------------------------------------------
+MATHEMATICAL EXPERIMENT:
+
+The goal is to find a mathematical proof behind how QL’s simple use of the max argument in the update rule formula can ultimately result in higher convergence return values.
+
+
+First, simply observe any visible trends that may be present. According to my 2-requirements model, increasing Y (path adjacency) should correlate with higher SARSA performance. However, keep in mind that the main hypothesis we are testing for is if higher X (path length) correlates strongly enough with higher QL performance. 
+Try taking certain gridworlds at different points, running an example QL and SARSA agent, and observing an mp4 video playback of what path the agents take in the environment
+
+Choose different gridworld examples where QL beats SARSA and where SARSA beats QL from the completed main experiment. Allow this gridworld structure, as well as the other training hyperparameters to be constant.
+
+Recognize the following causal model about how the change in the update rule formula would eventually make for a difference in average convergence return values: 
+	1. A change in the QL update rule (specifically with the addition of a max argument) changes how the Q-table is updated
+	2. The Q-table changes which actions are taken by the agent
+	3. The actions taken by the agent define what states and rewards the agent experiences each episode
+	4. The experiences of the agent further change how the Q-table is updated
+	5. #1-4 repeat in a feedback loop for the set number of episodes . The average cumulative reward experienced by the agent at the last 10 episodes of training is our convergence value. 
+	6. 500 trials of convergence values make for the average convergence value, which is then transformed based on the performance baseline value.
+
+Express this causal model into a chain of functions (input-output chain)
+
+Take apart the formulas and algorithms and observe how the events in the causal model are affected and snowball from the seemingly minor difference in QL’s and SARSA’s update rules.
+
+After mathematical analysis, thoroughly review for any sources of mistake/error.
+
+Derive an accurate, computational explanation as to why, when, and how QL’s ‘careless’ update rule can make it outperform SARA's with its ‘cautious’ update rule.
+
+
+
+-----------------------------------------------------------------------
+
+SARSA never beats QL
+
+However, my explanation is that, no, SARSA is not a failure, u bully >:(
+In individual cases, yes, it can beat QL, but on average, some never ever learn, reducing the average
+
+However why SARSA performs bad with very short path _lengths and even having the graph trending downwards is still unknown.
+
+
+-----------------------------------------------------------------------
+
+
+Science Fair Forms Situation:
+
+Issues:
+
+Abstract Missing Conclusion	
+Form 1 Missing			- Dr Urbina will do this
+Form 1B missing?		- ??
+Research Plan missing?		- ?
+Form 1A missing end date	- Finished
+Abstract Missing Answer 4	- Finished
+
+
+-----------------------------------------------------------------------
+
+Title: Joseph's Method Of Handcrafting Awesome Boards
+
+Most science fair boards you will see nowadays are lazily printed as one big paper poster.
+https://www.science.edu.sg/images/default-source/scs-images/for-schools/school-competitions/singapore-science-engineering-fair/teasers/ssef-teaser.jpg
+Doing this expensive (Good 36 x 48 inch posters can be $60 to print, and this isn't even mentioning larger sizes or higher qualities).
+
+Meanwhile, a traditional tri-fold board costs only about $5 bucks and its much more customizable -meaning you can make your board truly stand out from the rest.
+science fair 1.jpg
+(what I lack in personal height I made up for in board height)
+
+
+During my 4 years in the Crooms science fair, I have developed some good tips on making tri-fold boards that stand out:
+
+1. Modularize your sections and intentionally size them to match your paper sizes
+	- I often soley use regular sized pieces of paper (8.5 *11) [For larger paper sizes, you can ask Miss Benton in the media center, I think she has like 17*11 inch papers which is much more useful]
+	- Because my sections often won't fit into a single pieces of paper, I print sections of each section on different papers
+	- When I'm making my digital presentation on google slides or powerpoint, I will intentionally size them to match physical paper sizes so they print cleanly
+	- You can make tiny little subsections within sections, such as for graphs or images, which makes things clean and logically ordered
+2. Make your boards tower over the others
+	- You can make super large boards by stacking multiple on top of one another
+	- What I did last year is take two tri-folds, overlap them vertically, and nail them together using nuts and bolts.
+	- This gives you more room and will intimidate your competitors
+	- You can easily transport your posters in deconstructed form and then assemble them on site.
+	- This website is super useful: https://www.sciencebuddies.org/science-fair-projects/competitions/big-display-boards-top-science-competitions#:~:text=For%20a%20stacked%20board%2C%20you,also%20useful%20for%20board%20assembly. 
+3. Use liquid glue so you can easily remove sections later
+	- If you participate in regionals and then move on to higher divisions such as States, you conduct additional experimentation in between.
+	- And you will want to update your board for then.
+	- If you have a paper printed board, you would have to spend another 60 bucks to reprint the board
+	- But for trifolds, you can simply take down the old sections and put up new ones
+	- For these sections, I recommend using liquid glue to stick them to the board
+	- Use a blow-drier to apply heat to the paper glue to make it lose its stickiness and come off easily without ripping off paper from the board
+cv
+
+
+
+
+
+-----------------------------------------------------------------------
+
+I introduced a different method for comparing their performance: just minussing 
+
+### ### ### STATISTICAL TESTS ### ### ###
+Correlation coefficient: 0.641887739851403
+P-value: 1.8313032500086145e-10
+
+The result is statistically significant.
+
+
+
+-----------------------------------------------------------------------
+
+Recording Q_Tables in Q_TABLES.txt
+
+
+ Observation: Even without any sort of barriers, SARSA cannot make it to the end because perhaps its impossible. The Q-values simply become very diluted due to the chance of epsilon exploration. 
+
+
+-----------------------------------------------------------------------
+
+Imlemented a debug feature for the training process
+
+Also implemented way to view the policy map over time
+
+-----------------------------------------------------------------------
+
+The causal process:
+
+
+	1. A change in the update rule changes the Q table (QL's use of just maximum action, whereas SARSA's use of maximum action + 10% probability of exploration)
+	2. The Q-table changes which actions are taken by the agent
+	3. The actions taken by the agent define what states and rewards the agent experiences each episode
+	4. The experiences of the agent further change how the Q-table is updated
+	5. #1-4 repeat in a feedback loop for the set number of steps and episodes . The average cumulative reward experienced by the agent at the last 10 episodes of training is our convergence value. 
+	6. 500 trials of convergence values make for the average convergence value, which is then transformed based on the performance baseline value.
+
+For gridworld #31
+
+Simplifications and Specifications:
+- SARSA's lower convergence value is due to not reaching the goal state (the policy stays in a timeout corner)
+	- On average yes. In some cases SARSA is able to find the goal.
+
+- Causal event #4 is crucial to SARSA's lower performance. By Value Iteration, even when factoring in the 10% exploration, going to the goal would be more favourable than staying home (hence why QL is beating SARSA with constant epsilon). However, since SARSA is not able to experience/explore the goal area sufficiently, this does not happen.
+- Then I must explain why SARSA chooses not to go through the bottleneck at all in the first place, compared to QL.
+
+
+
+-----------------------------------------------------------------------
+
+Mathematical Analysis Moving Parts:
+
+- Causal chain
+- Sarsa's Lower Convergence due to not reaching goal state (timeout corner)
+- SARSA's ultimate target boostrap expression
+- Proof that Casual event #1 (difference in boostrap expressions) is not the sole reason by Value Iteration
+	- Consequently, Casual Event 4 (lack of exploration of environment) is the reason.
+- Information about rewards propagate slowly (information about the immediate punishment comes before the overarching reward can)
+- SARSA's evaluation of Bottleneck is negative, while QL is not. SARSA then avoids going through bottleneck ever again.
+
+-----------------------------------------------------------------------
+
+Connectivity constraint: All cells (0) must form a single connected region. This means that if you consider all the (0) cells as a set, there must be a path through adjacent (0) cells between any pair of (0) cells. The connectivity of the (0) cells must not form disjoint clusters. 
