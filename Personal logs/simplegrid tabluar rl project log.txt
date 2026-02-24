@@ -1,32 +1,31 @@
-Project Log Summary (written by GPT)
+= = = = = = = Simplegrid Tabular RL Personal Project Log = = = = = = =
 
-Early Stage — Getting QL and SARSA Working
+
+= = = SUMMARY = = =
+Since this project log is close to 30,000 lines, here is a summary of it (written by Claude Sonnet 4.6):
+
+= Early Stage — Getting QL and SARSA Working =
 The author implements Q-Learning first, verifying it works with epsilon decay and in slippery environments. They then implement SARSA and notice it performs comparably at first. They build out an auto-logging system (JSON files, MP4 playbacks, folder structures) and a performance analysis machine to run many trials and graph results.
 
-Discovery — QL Consistently Beats SARSA
+= Discovery — QL Consistently Beats SARSA =
 After systematic testing across many hyperparameter configurations, the author finds QL almost always outperforms SARSA in the SimpleGrid environment. They find the exception: in cliff-walking environments (high punishment, terminal obstacles), SARSA wins — consistent with known RL theory. This raises the central research question: why does QL beat SARSA in low-punishment gridworlds?
 
-Hypothesis Formation
+= Hypothesis Formation =
 The author develops a hypothesis that QL beats SARSA when rewards are sparse and the path to the goal is long, because QL's "careless" max operator lets it learn the optimal path faster without being penalized by epsilon exploration. SARSA's "cautious" on-policy updates hurt it when the environment doesn't punish exploration much.
 
-Experiment Design — The "Little Experiment"
+= Experiment Design — The "Little Experiment" =
 Two independent variables are identified to systematically test the hypothesis:
 - Length of the shortest path to the goal
 - Average wall adjacency of cells along that shortest path (a proxy for how risky/costly epsilon exploration is)
 
-Gridworld Generation
+= Gridworld Generation =
 The author builds a sophisticated gridworld generation system using random-cell, Perlin noise, and random-walker procedural methods to map out the 2D space of these two variables. A connectivity constraint (all white cells must be reachable) is enforced, and a Monte Carlo method estimates the astronomically large number of valid configurations. Compression/decompression utilities are built for storing gridworlds efficiently.
 
-Causal Analysis
+= Causal Analysis =
 Toward the end, the author works through a detailed causal model explaining why SARSA underperforms: it fails to explore the goal area sufficiently, gets stuck in "timeout corners," and receives negative Q-value updates at bottleneck cells early on — discouraging it from ever attempting those paths again. QL avoids this because its update rule doesn't penalize future exploration.
 
-Science Fair Context
+= Science Fair Context =
 Throughout, there are references to this being a high school science fair project, with mentions of advisors (Dr. Mondesire, Dr. Urbina), deadlines, form submissions, and even a section on how to build a good tri-fold display board.
-
-
-
-
-
 
 -----------------------------------------------------------------------
 
@@ -2869,5 +2868,6 @@ Mathematical Analysis Moving Parts:
 - SARSA's evaluation of Bottleneck is negative, while QL is not. SARSA then avoids going through bottleneck ever again.
 
 -----------------------------------------------------------------------
+
 
 Connectivity constraint: All cells (0) must form a single connected region. This means that if you consider all the (0) cells as a set, there must be a path through adjacent (0) cells between any pair of (0) cells. The connectivity of the (0) cells must not form disjoint clusters. 
