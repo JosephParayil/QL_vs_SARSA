@@ -10,5 +10,5 @@ The math proof for this project can be found in Mathematical_Analysis.pdf
 
 ## Project Poster
 <p align="center">
-  <img src="images/Project_Trifold.heic" alt="Project Poster" width="700"/>
+  <img src="Trifold-Poster.png" alt="Project Poster" width="700"/>
 </p>
