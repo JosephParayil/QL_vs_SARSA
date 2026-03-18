@@ -7,8 +7,6 @@ This project investigated reinforcement learning algorithms QL (off-policy) and 
 ## Proof
 The math proof for this project can be found in Mathematical_Analysis.pdf
 
-
-## Project Poster
 <p align="center">
   <img src="Trifold-Poster.png" alt="Project Poster" width="700"/>
 </p>
